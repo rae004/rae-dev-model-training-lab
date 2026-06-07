@@ -1,0 +1,9 @@
+# Example config — used by tests to exercise the loader.
+# Real training/eval configs land in M3/M8.
+
+[run]
+name = "example"
+seed = 1337
+
+[device]
+preference = "auto"  # "cpu" | "cuda" | "auto"
