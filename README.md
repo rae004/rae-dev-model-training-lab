@@ -96,4 +96,5 @@ architecture doc.
 
 Training-data provenance and licenses are tracked deliberately. The full dataset
 is **not** committed — only a small sample plus preparation scripts — and large
-model artifacts live outside Git. Project license: TBD.
+model artifacts live outside Git. The project itself is licensed under the
+[Apache License 2.0](LICENSE) (see ADR-020).
