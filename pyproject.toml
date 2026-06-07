@@ -1,0 +1,15 @@
+[project]
+name = "rae-model-training-research"
+version = "0.1.0"
+description = "Learning project: build, train, and fine-tune a small code-review language model"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = ["ruff", "pytest"]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100

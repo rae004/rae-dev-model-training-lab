@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+
+# uv / virtualenvs
+.venv/
+.python-version
+
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Model artifacts (ADR-011, CLAUDE.md rule 2): never commit weights anywhere
+*.gguf
+*.pt
+*.pth
+*.safetensors
+*.bin
+*.onnx
+
+# Checkpoints
+checkpoints/
+
+# Data: ignore everything in data/ except the committed scaffolding
+# (sample/, scripts/, SOURCES.md per CLAUDE.md rule 2)
+data/*
+!data/sample/
+!data/scripts/
+!data/SOURCES.md
+
+# Training run outputs / logs
+runs/
+tb_logs/
+wandb/
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
