@@ -24,3 +24,16 @@ def test_module_help_runs() -> None:
     )
     assert result.returncode == 0
     assert b"codereview" in result.stdout
+    assert b"train" in result.stdout
+
+
+def test_train_subcommand_help_runs() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "codereview", "train", "--help"],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert b"--config" in result.stdout
+    assert b"--device" in result.stdout
+    assert b"--resume" in result.stdout
