@@ -127,3 +127,41 @@ class GPT(nn.Module):
 
     def num_params(self) -> int:
         return sum(p.numel() for p in self.parameters())
+
+    @torch.no_grad()
+    def generate(
+        self,
+        prompt: torch.Tensor,
+        max_new_tokens: int,
+        *,
+        temperature: float = 1.0,
+        top_k: int | None = None,
+    ) -> torch.Tensor:
+        """Sample `max_new_tokens` tokens autoregressively after `prompt`.
+
+        Returns the full sequence (B, prompt_len + max_new_tokens). When the
+        running context exceeds `block_size`, it's cropped to the last
+        `block_size` tokens — Phase 1 has no KV cache; quality past the
+        training context length is best-effort.
+        """
+        if temperature <= 0:
+            raise ValueError(f"temperature must be > 0; got {temperature}")
+        if max_new_tokens < 0:
+            raise ValueError(f"max_new_tokens must be >= 0; got {max_new_tokens}")
+        was_training = self.training
+        self.eval()
+        ids = prompt
+        for _ in range(max_new_tokens):
+            idx_cond = ids if ids.size(1) <= self.cfg.block_size else ids[:, -self.cfg.block_size :]
+            logits, _ = self.forward(idx_cond)
+            logits = logits[:, -1, :] / temperature
+            if top_k is not None:
+                k = min(top_k, logits.size(-1))
+                thresh = torch.topk(logits, k).values[:, -1:]
+                logits = torch.where(logits < thresh, torch.full_like(logits, -float("inf")), logits)
+            probs = F.softmax(logits, dim=-1)
+            next_id = torch.multinomial(probs, num_samples=1)
+            ids = torch.cat([ids, next_id], dim=1)
+        if was_training:
+            self.train()
+        return ids
