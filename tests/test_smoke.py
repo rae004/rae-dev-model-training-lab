@@ -37,3 +37,16 @@ def test_train_subcommand_help_runs() -> None:
     assert b"--config" in result.stdout
     assert b"--device" in result.stdout
     assert b"--resume" in result.stdout
+
+
+def test_sample_subcommand_help_runs() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "codereview", "sample", "--help"],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert b"--checkpoint" in result.stdout
+    assert b"--prompt" in result.stdout
+    assert b"--max-new-tokens" in result.stdout
+    assert b"--top-k" in result.stdout
