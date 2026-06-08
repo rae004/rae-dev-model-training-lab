@@ -1,0 +1,38 @@
+# ADR-016 step-1 spec: char-level baby GPT, ~1-3M params (actually ~830k at
+# vocab=100), trained on the prepared corpus. The corpus must exist first —
+# run `uv run python data/scripts/prep_corpus.py` against a filled-in
+# data/scripts/sources.toml to produce data/corpus.txt.
+
+[data]
+corpus_paths = ["data/corpus.txt"]
+val_fraction = 0.1
+
+[model]
+block_size = 128
+n_layer = 4
+n_head = 4
+d_model = 128
+dropout = 0.0
+
+[optim]
+learning_rate = 3e-4
+min_learning_rate = 3e-5
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+[schedule]
+warmup_steps = 200
+max_steps = 5000
+
+[loop]
+batch_size = 64
+eval_interval = 250
+eval_iters = 50
+log_interval = 50
+
+[io]
+out_dir = "runs/char_step1"
+seed = 1337
+device = "auto"
