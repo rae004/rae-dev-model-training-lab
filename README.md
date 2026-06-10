@@ -4,9 +4,12 @@ A small, self-hosted language model that reviews Python and TypeScript diffs —
 built primarily as a hands-on project to understand how such models are created
 and evaluated, with a genuinely useful local reviewer as the payoff.
 
-> **Status:** Early development / design phase. The architecture and output
-> contract are defined; implementation hasn't started. The commands below
-> describe the *intended* interface, not yet working code.
+> **Status:** Phase 1 in progress. M1–M4 are merged: package skeleton,
+> deterministic corpus prep, char-level tokenizer, GPT, device-agnostic
+> training loop, and a `sample` subcommand all exist and have test coverage.
+> The `reviewer` CLI shown below is still on the roadmap (M7); the example
+> commands in *Intended usage* describe its *planned* interface, not working
+> code yet. See *Development* further down for what runs today.
 
 ## What it is
 
@@ -57,11 +60,19 @@ pre-commit hook or a CI step. See the architecture doc for the full schema.
 
 ## Development
 
-Requires Python and [`uv`](https://github.com/astral-sh/uv):
+Requires Python 3.12+ and [`uv`](https://github.com/astral-sh/uv).
 
 ```bash
-uv sync     # install from the lockfile
-# CLI, training, and eval entrypoints to follow
+uv sync                                       # install from the lockfile
+uv run pytest                                 # run the test suite
+uv run python -m codereview --help            # top-level CLI
+
+# Train a tiny model on the committed sample data (CI-safe smoke run):
+uv run python -m codereview train --config configs/smoke.toml --device cpu
+
+# Sample text from a saved checkpoint:
+uv run python -m codereview sample --checkpoint runs/smoke/ckpt.pt \
+    --prompt "def " --max-new-tokens 100 --seed 42
 ```
 
 Phase 1 (the from-scratch model) trains on CPU on `rae-dev-command`, with a

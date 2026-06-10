@@ -25,6 +25,11 @@ is, however, ample for Phase 1's tiny models and for partial inference offload.
 | `rae-bot-alpha` | Ryzen 3 3200G (4c), 64 GB | **Data plane** — dataset prep, curation, eval runs |
 | Rented GPU | cloud, burst | Phase 2 QLoRA fine-tuning only |
 
+All three local machines are **x86_64** (Pop!_OS 24.04 ships only that
+architecture), so the same lockfile and CPU `torch` wheel resolve identically
+on every box — and on GitHub Actions' `ubuntu-latest` CI runner. An aarch64
+addition would need a second source mapping in `pyproject.toml`.
+
 The GTX 1050 (Pascal, `sm_61`) sits past PyTorch's support line for current
 builds, so the workhorse pins an older PyTorch from the cu126 wheel line in its
 lockfile. Inference via llama.cpp/Ollama is unaffected.
@@ -290,5 +295,6 @@ repo/
 **Resolved since first draft:** the Phase 1 model/tokenizer/config spec
 (ADR-016: char-level ~1–3M first, then small-BPE ~10M baby-GPT, device-agnostic,
 fp32, doubling as a CPU-vs-GPU benchmark), the GGUF transfer mechanism
-(ADR-015: `rsync` over SSH), and the Phase 1 pretraining corpus (ADR-018: own
-repos + a permissively licensed public slice, provenance in `data/SOURCES.md`).
+(ADR-015: `rsync` over SSH), the Phase 1 pretraining corpus (ADR-018: own
+repos + a permissively licensed public slice, provenance in `data/SOURCES.md`),
+and the project license (ADR-020: Apache 2.0).

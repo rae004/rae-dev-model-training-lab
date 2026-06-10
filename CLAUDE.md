@@ -7,7 +7,7 @@ all design decisions; your job is implementation within them.
 ## Read before structural work
 
 - `docs/ARCHITECTURE.md` — the system design. Authoritative.
-- `docs/DECISIONS.md` — 19 ADRs. **Append-only.** Never edit, renumber, or
+- `docs/DECISIONS.md` — 20 ADRs. **Append-only.** Never edit, renumber, or
   contradict an ADR. If implementation reveals a decision should change,
   propose a new superseding ADR and stop for human approval.
 - `docs/MILESTONES.md` — the work plan. Implement one milestone at a time, in
