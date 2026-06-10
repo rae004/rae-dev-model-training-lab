@@ -10,8 +10,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="codereview",
         description=(
-            "Code review assistant. Subcommands: train (M3), sample (M4). "
-            "Review (M7) and eval (M8) arrive in later milestones."
+            "Code review assistant. Subcommands: train (M3), sample (M4), "
+            "review (M7). Eval (M8) arrives in a later milestone."
         ),
     )
     parser.add_argument("--version", action="version", version=__version__)
@@ -80,6 +80,42 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sample.add_argument("--seed", type=int, default=None, help="Optional sampling seed.")
 
+    review_p = subparsers.add_parser(
+        "review",
+        help="Review a diff via the configured backend (M7).",
+        description=(
+            "Read a diff from stdin, send it to the configured backend, "
+            "and emit a Review on stdout. Exits non-zero if the verdict fails."
+        ),
+    )
+    review_p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to a review config (e.g., configs/review.toml). Defaults apply if omitted.",
+    )
+    review_p.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit the raw Review object as JSON instead of the text rendering.",
+    )
+    review_p.add_argument(
+        "--threshold",
+        choices=["error", "warning", "info"],
+        default=None,
+        help="Override config's verdict threshold.",
+    )
+    review_p.add_argument(
+        "--backend-url",
+        default=None,
+        help="Override config's backend.base_url (e.g., http://workhorse:11434).",
+    )
+    review_p.add_argument(
+        "--model",
+        default=None,
+        help="Override config's backend.model (e.g., qwen2.5-coder).",
+    )
+
     return parser
 
 
@@ -119,6 +155,47 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(text)
         return 0
+
+    if args.command == "review":
+        import json as _json
+        import sys
+
+        from .config import load_config
+        from .review import (
+            ReviewConfig,
+            Severity,
+            render_text,
+            review,
+            review_to_jsonable,
+        )
+
+        cfg_dict = load_config(args.config) if args.config is not None else {}
+        cfg = ReviewConfig.from_dict(cfg_dict)
+        if args.threshold:
+            cfg.threshold = Severity(args.threshold)
+        if args.backend_url:
+            cfg.backend.base_url = args.backend_url
+        if args.model:
+            cfg.backend.model = args.model
+
+        diff = sys.stdin.read()
+        if not diff.strip():
+            print("error: no diff on stdin (pipe `git diff` in)", file=sys.stderr)
+            return 2
+
+        try:
+            result = review(diff, cfg)
+        except Exception as e:
+            print(f"error: review failed: {e}", file=sys.stderr)
+            return 2
+
+        if args.json:
+            print(_json.dumps(review_to_jsonable(result), indent=2))
+        else:
+            print(render_text(result))
+
+        assert result.verdict is not None
+        return 0 if result.verdict.passed else 1
 
     log.info("codereview %s — no subcommand given; see --help.", __version__)
     return 0

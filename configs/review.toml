@@ -1,0 +1,15 @@
+# Review configuration.
+#
+# Defaults are the *(proposed)* values from ARCHITECTURE.md §4: change them
+# here in config (CLAUDE.md rule 5), never silently in the schema or the
+# architecture doc. Override individual fields via CLI flags
+# (--threshold, --backend-url, --model).
+
+threshold = "error"   # error | warning | info
+
+[backend]
+type        = "ollama"
+base_url    = "http://workhorse:11434"
+model       = "qwen2.5-coder"
+timeout     = 60.0
+temperature = 0.2
