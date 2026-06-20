@@ -202,6 +202,7 @@ def test_review_config_backend_overrides() -> None:
                 "model": "codellama",
                 "timeout": 10.0,
                 "temperature": 0.5,
+                "num_thread": 8,
             },
         }
     )
@@ -209,6 +210,22 @@ def test_review_config_backend_overrides() -> None:
     assert cfg.backend.model == "codellama"
     assert cfg.backend.timeout == 10.0
     assert cfg.backend.temperature == 0.5
+    assert cfg.backend.num_thread == 8
+
+
+def test_review_config_num_thread_defaults_to_none() -> None:
+    cfg = ReviewConfig.from_dict({"backend": {}})
+    assert cfg.backend.num_thread is None
+
+
+def test_build_backend_propagates_num_thread() -> None:
+    from codereview.backend import OllamaBackend
+    from codereview.review import build_backend
+
+    cfg = BackendConfig(num_thread=6)
+    backend = build_backend(cfg)
+    assert isinstance(backend, OllamaBackend)
+    assert backend.num_thread == 6
 
 
 # ---------------------------------------------------------------------------

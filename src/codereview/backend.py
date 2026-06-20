@@ -34,15 +34,23 @@ class OllamaBackend:
     model: str = "qwen2.5-coder"
     timeout: float = 60.0
     temperature: float = 0.2
+    # Threads for the llama.cpp inference loop. None → let Ollama auto-pick.
+    # On the workhorse (i7-8700, 6c/12t) setting this to 6–8 measurably
+    # improves single-stream throughput; scaling beyond is sub-linear due
+    # to hyperthread / cache contention.
+    num_thread: int | None = None
 
     def generate(self, *, system: str, user: str) -> str:
         url = f"{self.base_url.rstrip('/')}/api/generate"
+        options: dict[str, Any] = {"temperature": self.temperature}
+        if self.num_thread is not None:
+            options["num_thread"] = self.num_thread
         body: dict[str, Any] = {
             "model": self.model,
             "system": system,
             "prompt": user,
             "stream": False,
-            "options": {"temperature": self.temperature},
+            "options": options,
         }
         request = Request(
             url,

@@ -174,6 +174,10 @@ class BackendConfig:
     model: str = "qwen2.5-coder"
     timeout: float = 60.0
     temperature: float = 0.2
+    # llama.cpp thread count for the Ollama inference loop. None lets
+    # Ollama auto-pick; set explicitly on hardware where the auto-pick is
+    # wrong (the workhorse i7-8700 likes 6–8).
+    num_thread: int | None = None
 
 
 @dataclass
@@ -184,6 +188,8 @@ class ReviewConfig:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ReviewConfig":
         b = d.get("backend", {})
+        num_thread_raw = b.get("num_thread")
+        num_thread = int(num_thread_raw) if num_thread_raw is not None else None
         return cls(
             threshold=Severity(d.get("threshold", "error")),
             backend=BackendConfig(
@@ -192,6 +198,7 @@ class ReviewConfig:
                 model=b.get("model", "qwen2.5-coder"),
                 timeout=float(b.get("timeout", 60.0)),
                 temperature=float(b.get("temperature", 0.2)),
+                num_thread=num_thread,
             ),
         )
 
@@ -343,6 +350,7 @@ def build_backend(config: BackendConfig) -> "Backend":
             model=config.model,
             timeout=config.timeout,
             temperature=config.temperature,
+            num_thread=config.num_thread,
         )
     raise ValueError(f"unknown backend type: {config.type!r}")
 

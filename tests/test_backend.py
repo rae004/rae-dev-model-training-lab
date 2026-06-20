@@ -71,6 +71,26 @@ def test_ollama_sends_expected_request_shape() -> None:
     assert body["options"]["temperature"] == 0.2
 
 
+def test_ollama_default_options_omit_num_thread() -> None:
+    captured: dict[str, Any] = {}
+    fake = _fake_urlopen_factory({"response": "ok"}, captured)
+    backend = OllamaBackend()  # num_thread defaults to None
+    with patch("codereview.backend.urlopen", fake):
+        backend.generate(system="s", user="u")
+    options = captured["body"]["options"]
+    assert "temperature" in options
+    assert "num_thread" not in options
+
+
+def test_ollama_num_thread_is_passed_through_options_when_set() -> None:
+    captured: dict[str, Any] = {}
+    fake = _fake_urlopen_factory({"response": "ok"}, captured)
+    backend = OllamaBackend(num_thread=8)
+    with patch("codereview.backend.urlopen", fake):
+        backend.generate(system="s", user="u")
+    assert captured["body"]["options"]["num_thread"] == 8
+
+
 def test_ollama_trailing_slash_in_base_url_is_normalized() -> None:
     captured: dict[str, Any] = {}
     fake = _fake_urlopen_factory({"response": "ok"}, captured)
