@@ -2,7 +2,7 @@
 #
 # Allowed licenses for the public slice: MIT, Apache-2.0 only.
 # Owner's own repositories are exempt from license filtering.
-# Every entry below should also have a row in data/SOURCES.md with
+# Every entry below also has a row in data/SOURCES.md with
 # license and pull date.
 #
 # Determinism notes:
@@ -11,33 +11,48 @@
 #  - The corpus output is byte-identical across runs for a given file
 #    set and this sources.toml — sources are sorted by `name`, files
 #    within a source by relative POSIX path.
-#
-# Fill in below. The script silently produces an empty corpus if `sources`
-# is empty, which is useful for the test suite but not for training.
 
-# File extensions ingested from each source.
 extensions = [".py", ".ts", ".tsx"]
 
-# Example: owner's local checkout (uncomment and edit).
-# [[sources]]
-# name = "rae-dev-something"
-# type = "path"
-# path = "~/projects/rae-dev-something"
-# license = "owner"
+# --- Owner repos (license-exempt per ADR-018) ---
 
-# Example: owner's repo via git.
-# [[sources]]
-# name = "rae-dev-something"
-# type = "git"
-# url = "https://github.com/rae004/rae-dev-something.git"
-# ref = "main"
-# license = "owner"
+[[sources]]
+name = "ai-security-digest"
+type = "path"
+path = "~/projects/ai-security-digest"
+license = "owner"
 
-# Example: a public slice — must be MIT or Apache-2.0 per ADR-018.
-# [[sources]]
-# name = "example-public-repo"
-# type = "git"
-# url = "https://github.com/owner/repo.git"
-# ref = "v1.0.0"
-# license = "MIT"
+[[sources]]
+name = "rae-budget"
+type = "path"
+path = "~/projects/rae-budget"
+license = "owner"
 
+[[sources]]
+name = "rae-time-tracker-and-invoice"
+type = "path"
+path = "~/projects/rae-time-tracker-and-invoice"
+license = "owner"
+
+# --- Public slice (MIT/Apache-2.0 only per ADR-018) ---
+
+[[sources]]
+name = "fastapi"
+type = "git"
+url = "https://github.com/fastapi/fastapi.git"
+ref = "master"
+license = "MIT"
+
+[[sources]]
+name = "thealgorithms-python"
+type = "git"
+url = "https://github.com/TheAlgorithms/Python.git"
+ref = "master"
+license = "MIT"
+
+[[sources]]
+name = "typescript"
+type = "git"
+url = "https://github.com/microsoft/TypeScript.git"
+ref = "main"
+license = "Apache-2.0"
