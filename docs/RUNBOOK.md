@@ -253,28 +253,63 @@ This commit **closes M4** and closes the CUDA verification owed by M3.
 
 ## 5. Set up Ollama on `workhorse`  *(M7 prep)*
 
-Ollama itself is installed per SETUP.md §2 and listens on
-`0.0.0.0:11434`. Pull a code model:
+### 5a. Install + LAN override
+
+Per SETUP.md §2. The override file content is fiddly — paste **exactly**
+these two lines, no comment prefix:
+
+```
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0"
+```
+
+If you've seen `OLLAMA_NUM_THREADS` suggested elsewhere — including by me
+in chat earlier — ignore it; it isn't a real Ollama env var. Threading is
+set per-request via `options.num_thread`, which `configs/review.toml`
+exposes as the `num_thread` field. See §6.
+
+### 5b. Pull the code model
 
 ```bash
 ssh workhorse
 ollama pull qwen2.5-coder        # the default in configs/review.toml
-# or: ollama pull qwen2.5-coder:7b for a specific size
-
-# Verify
-ollama list
-curl -s http://workhorse:11434/api/tags     # from command
+ollama list                       # confirm it's there
+exit
 ```
 
-If the curl fails, check that the `OLLAMA_HOST=0.0.0.0` override in the
-systemd unit is in place (SETUP.md §2).
+### 5c. Verify from `command`
+
+```bash
+ssh workhorse systemctl show ollama --property=Environment
+# → expect: ... OLLAMA_HOST=0.0.0.0 ...
+
+curl -s http://workhorse:11434
+# → "Ollama is running"
+```
+
+If the curl fails but ssh works, the LAN override didn't stick — re-do
+§5a and re-verify with `systemctl show`. A common gotcha: leading `#`
+prefixes in the override file are inert (systemd treats them as comments),
+so the override silently does nothing.
 
 ---
 
 ## 6. Live `git diff | reviewer`  *(M7 done-means)*
 
+### 6a. Smoke check (small input)
+
+Confirm the pipeline first with something tiny — it returns in seconds
+and proves the end-to-end stack works without depending on whether the
+1050 finishes a real diff in the configured timeout:
+
 ```bash
-# On command, in any git repo with a recent diff
+echo 'const truth = true; console.log(truth);' \
+    | uv run python -m codereview review --config configs/review.toml
+```
+
+### 6b. A real diff
+
+```bash
 git -C ~/projects/some-repo diff HEAD~1 \
     | uv run python -m codereview review --config configs/review.toml
 ```
@@ -286,7 +321,7 @@ What to watch for:
 - Exit code: `0` if clean, `1` if blocking findings, `2` on error
 - Reasonable findings — not nitpicks the linters would catch
 
-Then verify the JSON path validates:
+JSON sanity (validates against the §4 schema):
 
 ```bash
 git -C ~/projects/some-repo diff HEAD~1 \
@@ -295,9 +330,35 @@ git -C ~/projects/some-repo diff HEAD~1 \
 # → {"passed": ..., "threshold": "error"}
 ```
 
-If model output isn't well-formed JSON, the CLI exits 2 with the
-parser's `ValueError` on stderr — that's a prompt-engineering signal,
-not a bug. The system prompt may need tightening for a smaller model.
+### 6c. Realistic latency on the GTX 1050 (and how to tune)
+
+The 1050 has 2 GB VRAM; `qwen2.5-coder` is ~4.7 GB, so most of the model
+runs on the i7-8700 CPU. Concrete numbers observed:
+
+- Small prompts (a few lines of code): a few seconds
+- ~40 KB diff (a full PR like #7): several minutes; can exceed the
+  default `timeout = 550.0` in `configs/review.toml`
+- `num_thread = 8` is ~19 % faster than auto-pick on a short prompt
+  (sub-linear past 8 due to hyperthread / cache contention)
+
+If a real diff times out:
+
+1. **Warm the model first** — the first request after Ollama starts pays
+   a ~30 s model-load cost; subsequent calls within ~5 min skip it:
+   ```bash
+   ssh workhorse 'curl -s -X POST http://localhost:11434/api/generate \
+       -d "{\"model\":\"qwen2.5-coder\",\"prompt\":\"hi\",\"stream\":false}" \
+       -o /dev/null'
+   ```
+2. **Bump the timeout** in `configs/review.toml` (it ships at `550.0`;
+   try `900.0` or higher for full PR diffs).
+3. **Uncomment `num_thread = 8`** in `configs/review.toml`. While the
+   request is in flight, `htop` on workhorse should show several cores
+   active rather than one hot core.
+
+If the model returns text that isn't well-formed JSON, the CLI exits 2
+with the parser's `ValueError` on stderr — that's a prompt-engineering
+signal, not a bug. Smaller code models may need a tighter system prompt.
 
 This **closes M7**.
 

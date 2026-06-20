@@ -109,14 +109,37 @@ Make it listen on the LAN (not just localhost) so other machines can reach it:
 
 ```bash
 sudo systemctl edit ollama
-# add:
-#   [Service]
-#   Environment="OLLAMA_HOST=0.0.0.0"
+```
+
+In the editor that opens, between the two `### Anything between here and the
+comment below will become the contents of the drop-in file` markers, put
+**exactly these two lines** (no `#` prefix — those are markdown comments here,
+not file content; pasting them as-is would make the override a no-op):
+
+```
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0"
+```
+
+Save and exit, then:
+
+```bash
 sudo systemctl restart ollama
 ```
 
-Verify from another machine: `curl http://workhorse:11434` → "Ollama is
-running".
+Verify the override took effect:
+
+```bash
+systemctl show ollama --property=Environment
+# → should include OLLAMA_HOST=0.0.0.0
+
+# From another machine on the LAN:
+curl -s http://workhorse:11434     # → "Ollama is running"
+```
+
+If your default editor is something other than `nano`, prepend
+`SYSTEMD_EDITOR=vi` (or your preferred editor) to the `sudo systemctl edit`
+command — note the env var goes *after* `sudo`, not before.
 
 **Docker + Compose** (for the serving stack and the Phase 2 training-container
 smoke tests; the NVIDIA container toolkit lets containers see the GPU):
