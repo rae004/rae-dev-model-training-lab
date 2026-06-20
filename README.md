@@ -99,6 +99,9 @@ architecture doc.
   reviewable increments with acceptance criteria.
 - [`docs/SETUP.md`](docs/SETUP.md) — per-machine bootstrap (system layer up to
   `uv sync`).
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — end-to-end procedure for the Phase 1
+  real-world runs: corpus prep, char-level training on both machines, sampling,
+  results-log entry, Ollama setup, and the live `git diff | reviewer`.
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — design decisions log (ADRs).
 - [`CLAUDE.md`](CLAUDE.md) — operational guide for coding agents; implementation
   is agent-assisted with human review of every diff.
