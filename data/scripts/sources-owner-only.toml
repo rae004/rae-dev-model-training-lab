@@ -1,0 +1,22 @@
+# Owner-only corpus variant — used by configs/char_step1_owner.toml
+# for the ablation. License-exempt per ADR-018.
+
+extensions = [".py", ".ts", ".tsx"]
+
+[[sources]]
+name = "ai-security-digest"
+type = "path"
+path = "~/projects/ai-security-digest"
+license = "owner"
+
+[[sources]]
+name = "rae-budget"
+type = "path"
+path = "~/projects/rae-budget"
+license = "owner"
+
+[[sources]]
+name = "rae-time-tracker-and-invoice"
+type = "path"
+path = "~/projects/rae-time-tracker-and-invoice"
+license = "owner"
