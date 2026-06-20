@@ -135,9 +135,35 @@ path = "{tmp_path / 'does-not-exist'}"
         build_corpus(sources_toml, tmp_path / "out.txt")
 
 
-def test_real_sources_toml_parses_and_runs(tmp_path: Path) -> None:
-    """The committed sources.toml should be valid and produce an empty
-    corpus (its sources list is empty by default)."""
+def test_real_sources_toml_parses_with_owner_and_public_entries() -> None:
+    """The committed sources.toml should parse cleanly and contain both
+    license-exempt owner entries and MIT/Apache-2.0 public entries
+    (ADR-018). This is a structural check — it does not actually run
+    build_corpus, because that would clone large repos in CI."""
+    import tomllib
+
     real_toml = REPO_ROOT / "data" / "scripts" / "sources.toml"
-    out = tmp_path / "out.txt"
-    assert build_corpus(real_toml, out) == 0
+    data = tomllib.loads(real_toml.read_text(encoding="utf-8"))
+
+    assert ".py" in data["extensions"]
+    assert ".ts" in data["extensions"]
+
+    sources = data["sources"]
+    assert len(sources) > 0
+
+    licenses = {s["license"] for s in sources}
+    # Owner entries are license-exempt; public entries must be MIT or Apache-2.0
+    public_licenses = licenses - {"owner"}
+    assert public_licenses.issubset({"MIT", "Apache-2.0"}), (
+        f"sources.toml has non-permissive public licenses: {public_licenses}"
+    )
+
+    # Every entry has the required fields for its type
+    for s in sources:
+        assert "name" in s and "type" in s and "license" in s
+        if s["type"] == "path":
+            assert "path" in s
+        elif s["type"] == "git":
+            assert "url" in s and "ref" in s
+        else:
+            raise AssertionError(f"unknown source type: {s['type']}")
