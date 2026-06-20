@@ -1,0 +1,43 @@
+# Ablation: same architecture as char_step1, owner-code-only corpus.
+# Shows how much of the baseline model's TypeScript-flavored output
+# came from the public slice (mainly microsoft/TypeScript) vs. the
+# owner's own code style.
+#
+# Corpus produced by running:
+#   uv run python data/scripts/prep_corpus.py \
+#       --sources data/scripts/sources-owner-only.toml \
+#       --output data/corpus-owner-only.txt
+
+[data]
+corpus_paths = ["data/corpus-owner-only.txt"]
+val_fraction = 0.1
+
+[model]
+block_size = 128
+n_layer = 4
+n_head = 4
+d_model = 128
+dropout = 0.0
+
+[optim]
+learning_rate = 3e-4
+min_learning_rate = 3e-5
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+[schedule]
+warmup_steps = 200
+max_steps = 5000
+
+[loop]
+batch_size = 64
+eval_interval = 250
+eval_iters = 50
+log_interval = 50
+
+[io]
+out_dir = "runs/char_step1_owner"
+seed = 1337
+device = "auto"
