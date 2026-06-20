@@ -13,3 +13,9 @@ base_url    = "http://workhorse:11434"
 model       = "qwen2.5-coder"
 timeout     = 60.0
 temperature = 0.2
+# num_thread: llama.cpp inference threads per request. Omit (or comment out) to
+# let Ollama auto-pick. On the workhorse (i7-8700, 6c/12t) explicit 6–8 gives
+# a measurable single-stream speedup; on hardware with stronger GPU offload
+# this matters much less. Confirmed ~19% faster on workhorse with num_thread=8
+# vs default on a short prompt.
+# num_thread = 8
