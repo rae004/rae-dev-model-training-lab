@@ -109,6 +109,120 @@ def test_build_filters_by_extension(tmp_path: Path) -> None:
     assert "# not python or ts" not in text
 
 
+@pytest.mark.parametrize(
+    "ignored_dir",
+    [
+        "node_modules",
+        ".venv",
+        "dist",
+        "build",
+        ".git",
+        "__pycache__",
+        ".pytest_cache",
+        ".next",
+        "coverage",
+    ],
+)
+def test_build_prunes_default_ignore_dirs(tmp_path: Path, ignored_dir: str) -> None:
+    """Files matching the extension list but living under a default-ignored
+    dir name (at any depth) must not appear in the corpus."""
+    src = tmp_path / "src"
+    (src / "keep").mkdir(parents=True)
+    (src / "keep" / "good.py").write_text("# keep this\nKEEP_TOKEN = 1\n")
+    # Drop a file with the same extension inside the ignored dir
+    (src / ignored_dir).mkdir(parents=True)
+    (src / ignored_dir / "trash.py").write_text("# should be pruned\nTRASH_TOKEN = 1\n")
+    # And nested deeper
+    (src / "pkg" / ignored_dir / "subdir").mkdir(parents=True)
+    (src / "pkg" / ignored_dir / "subdir" / "deep.py").write_text("DEEP_TRASH = 1\n")
+
+    sources_toml = tmp_path / "sources.toml"
+    _write_sources_toml(sources_toml, src)
+    out = tmp_path / "corpus.txt"
+    build_corpus(sources_toml, out)
+    text = out.read_text(encoding="utf-8")
+
+    assert "KEEP_TOKEN" in text
+    assert "TRASH_TOKEN" not in text, f"failed to prune top-level {ignored_dir}/"
+    assert "DEEP_TRASH" not in text, f"failed to prune nested */{ignored_dir}/*"
+    assert ignored_dir not in text, f"ignored dir name leaked into corpus via {ignored_dir}/"
+
+
+def test_build_ignore_dirs_override_via_toml(tmp_path: Path) -> None:
+    """A sources.toml `ignore_dirs` array replaces the default set."""
+    src = tmp_path / "src"
+    # Put a .py inside node_modules (would normally be pruned)
+    (src / "node_modules").mkdir(parents=True)
+    (src / "node_modules" / "package.py").write_text("NODE_PKG = 1\n")
+    # And under a custom-ignored dir
+    (src / "experiments").mkdir(parents=True)
+    (src / "experiments" / "wip.py").write_text("WIP = 1\n")
+
+    sources_toml = tmp_path / "sources.toml"
+    sources_toml.write_text(
+        f"""
+extensions = [".py"]
+ignore_dirs = ["experiments"]
+
+[[sources]]
+name = "fixture"
+type = "path"
+path = "{src}"
+license = "owner"
+""",
+        encoding="utf-8",
+    )
+    out = tmp_path / "corpus.txt"
+    build_corpus(sources_toml, out)
+    text = out.read_text(encoding="utf-8")
+
+    # node_modules content NOW survives (override replaces default set)
+    assert "NODE_PKG" in text, "override should disable default node_modules pruning"
+    # experiments/ is the only thing pruned by the override
+    assert "WIP" not in text, "explicit override dir was not pruned"
+
+
+def test_build_owner_corpus_drops_dramatically_with_pruning(tmp_path: Path) -> None:
+    """Mimics the real owner-corpus case: a small project tree with a giant
+    fake node_modules. Without pruning the corpus is dominated by junk;
+    with default pruning, only the real source survives."""
+    src = tmp_path / "owner-repo"
+    (src / "src").mkdir(parents=True)
+    (src / "src" / "main.py").write_text("def main():\n    print('hi')\n" * 5)
+
+    # Fake a node_modules dir with many large .d.ts files
+    nm = src / "node_modules" / "@some-org" / "lib" / "src"
+    nm.mkdir(parents=True)
+    for i in range(20):
+        (nm / f"types-{i}.ts").write_text("// junk\n" * 500)
+
+    sources_toml = tmp_path / "sources.toml"
+    _write_sources_toml(sources_toml, src)
+    out = tmp_path / "corpus.txt"
+    size_with_pruning = build_corpus(sources_toml, out)
+
+    # Now turn off pruning explicitly. Write the file from scratch so the
+    # top-level ignore_dirs override lands above the [[sources]] table.
+    sources_toml.write_text(
+        f"""
+extensions = [".py", ".ts"]
+ignore_dirs = []
+
+[[sources]]
+name = "fixture"
+type = "path"
+path = "{src}"
+license = "owner"
+""",
+        encoding="utf-8",
+    )
+    out_unpruned = tmp_path / "corpus-unpruned.txt"
+    size_without_pruning = build_corpus(sources_toml, out_unpruned)
+
+    # Realistic ratio for the fixture: ~10 KB junk vs ~150 B real source.
+    assert size_without_pruning > size_with_pruning * 10
+
+
 def test_build_with_no_sources_writes_empty_file(tmp_path: Path) -> None:
     sources_toml = tmp_path / "sources.toml"
     sources_toml.write_text('extensions = [".py"]\n', encoding="utf-8")
