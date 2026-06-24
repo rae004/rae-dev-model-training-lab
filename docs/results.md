@@ -44,6 +44,137 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-06-22 — Phase 1 char-level: pruned-corpus re-baseline + data-quality lesson
+
+Re-run of the 2026-06-20 ablation on the **cleaned corpus** from PR #13
+(`prep_corpus.py` now prunes `node_modules` / `.venv` / `dist` /
+`build` / build caches / etc.). Two purposes: (a) re-baseline the
+project on clean data, and (b) make the data-quality lesson concrete
+and side-by-side comparable with the bloated run.
+
+- **Commit:** `94e09a2` (PR #13's merge, immediately before this entry)
+- **Configs:** same as the bloated entry —
+  `char_step1.toml` / `_small.toml` / `_long.toml` / `_owner.toml`
+- **Corpus:** `data/corpus.txt` shrank from 130 MB to **54.7 MB** (58 % drop);
+  `data/corpus-owner-only.txt` shrank from 77 MB to **1.2 MB** (98 % drop)
+- **Device:** `command` (Ryzen 9 9900X, CPU, fp32). No CUDA leg.
+
+#### Headline numbers
+
+| run | params | vocab | final train | min val (step) | × over random *(min-val)* |
+| --- | --- | --- | --- | --- | --- |
+| **baseline (5000 steps)** | 920 k | 439 | 0.94 | **0.81** (4750) | **196×** |
+| small (`n_layer=2, d_model=64`) | 164 k | 439 | 1.38 | 1.13 (4500) | 142× |
+| owner-only (clean 1.2 MB) | 834 k | **104** | **0.56** | 0.74 (4750) | 50× |
+| long (10000 steps) | 920 k | 439 | 0.80 | **0.65** (8500) | **226×** |
+
+#### Compared to the 2026-06-20 bloated runs
+
+| run | bloated min val → pruned | bloated × random → pruned |
+| --- | --- | --- |
+| baseline | 1.30 → **0.81** | 252× → **196×** |
+| small | 1.66 → 1.13 | 158× → 142× |
+| owner-only | 1.32 → 0.74 | 273× → **50×** |
+| long | 1.18 → **0.65** | 287× → **226×** |
+
+Raw loss got *better* (lower) across the board on the pruned corpus,
+**but the "× over random" ratio dropped**. This is the headline lesson:
+loss alone is misleading when vocabulary changes, because the random
+baseline `1/V` moves too. Pruning halved the full-corpus vocab
+(924 → 439) and quartered the owner-only vocab (666 → 104), making
+the random baseline easier to beat by default.
+
+The pruned numbers are the **honest new baseline**: 196× for baseline,
+226× for long, no contamination from npm ambient type files.
+
+#### Samples (prompt `"def "`, temp 0.8, top-k 40, seed 42, 250 chars)
+
+**Baseline (pruned, 920 k, 5000 steps):**
+
+```
+def undefined alse was the object" write allow's have to the clist in the eneed insertor if the procked in in line the parent.
+     * End to return object. Count function file the file constructor be of the can maination is the the returning and the the
+```
+
+**Small (pruned, 164 k):**
+
+```
+def actory(start)
+               """
+                 "title""; tyt: {
+               }
+                                                                                                                                                                      
+```
+
+**Owner-only (clean 1.2 MB, 834 k):**
+
+```
+def when seriods", () => {
+    renderWithTemplate();
+    expect(result.errors[0]).toMatch(/NvdRow');
+  });
+
+  it('returns at async () to0 in exist', () => {
+    expect(screen.queryByText('rawait content')).toBeInTheDocument();
+    expect(screen.getByPlac
+```
+
+**Long (pruned, 920 k, 10000 steps):**
+
+```
+def returns the service index of the given to all set to the client type. If a changed a test user the return line to TS or this is sort of the is sorting. This type sort attarte that is here con matched on a return match to match the a so at referent wa
+```
+
+#### What the samples actually show (the qualitative lesson)
+
+- **Owner-only is the headline.** Before pruning, it produced
+  `private _tags?;` JSDoc nonsense — the model was almost entirely
+  learning **npm ambient type definitions**, not the owner's code.
+  After pruning to actual hand-written source: **the sample is
+  recognizable Jest + React Testing Library**:
+  `renderWithTemplate()`, `expect(...).toMatch(...)`, `it('...', () => {...})`,
+  `expect(screen.queryByText(...)).toBeInTheDocument()`. **The model
+  finally learned the owner's testing style.** This single before/after
+  is the rawest "garbage in → garbage out" demonstration the project
+  could produce.
+- **Baseline pruned** is more English-prose-y and less JSDoc-flavored
+  than the bloated baseline. The microsoft/TypeScript repo's `built/`
+  output (which the prune removed) was a major source of the previous
+  baseline's `* @default - "--"`-style noise.
+- **Long pruned** continued to produce coherent prose ("service index",
+  "client type", "TS sort"). Val bottomed at step 8500 (0.65), then
+  bounced — same "should-have-early-stopped" signal as the bloated
+  long run, but at a lower absolute floor.
+
+#### Data-quality math (answering "was the 50× over random skewed?")
+
+For posterity — the corrected math that motivated this rerun:
+
+```
+bloated baseline:  loss 1.02  → model prob e^(-1.02) ≈ 36.1 %
+                   random 1/924 ≈ 0.108 %
+                   ratio: 334× (corrected; earlier "50×" claim used
+                                wrong vocab estimate of 140)
+
+pruned baseline:   loss 0.94  → model prob e^(-0.94) ≈ 39.1 %
+                   random 1/439 ≈ 0.228 %
+                   ratio: 172× (at final train; 196× at min val)
+```
+
+So **yes, the bloated number was inflated** — not by the model being
+worse on real data, but by the vocab being twice as large and the
+random-uniform baseline correspondingly twice as easy to beat. Loss
+numbers across different vocabularies aren't directly comparable.
+
+#### Verdict
+
+The **new project baseline is `0.81 min-val / 196× over random`** on
+the pruned 54.7 MB corpus. This supersedes the bloated baseline for
+purposes of comparing future models. The 2026-06-20 entry stands as
+the historical pre-prune snapshot and the data-quality lesson.
+
+---
+
 ### 2026-06-20 — Phase 1 char-level: baseline + ablation triplet
 
 - **Commit:** `88119a4` (commit at run time; this entry adds on top)
