@@ -102,6 +102,8 @@ architecture doc.
 - [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — end-to-end procedure for the Phase 1
   real-world runs: corpus prep, char-level training on both machines, sampling,
   results-log entry, Ollama setup, and the live `git diff | reviewer`.
+- [`docs/tokenizer-comparison.md`](docs/tokenizer-comparison.md) — char vs. BPE
+  compression measured on the Phase 1 corpus (the M5 lesson).
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — design decisions log (ADRs).
 - [`CLAUDE.md`](CLAUDE.md) — operational guide for coding agents; implementation
   is agent-assisted with human review of every diff.
