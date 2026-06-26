@@ -25,8 +25,14 @@ uv run pytest -q     # expect: all green
 uv run python -m codereview --help    # advertises train / sample / review
 ```
 
-Pull the latest `main` on `workhorse` too (we'll set up its cu126 env
+Pull the latest `main` on `workhorse` too (we'll set up its cu128 env
 in §3).
+
+> **Brand-new workhorse?** If you're rebuilding the workhorse from bare
+> hardware (post-ADR-021 GPU swap and Pop! reinstall), follow
+> [`docs/REBUILD.md`](REBUILD.md) first — it covers physical install,
+> OS reinstall, drivers, the cu128 venv, and the first verified CUDA
+> run. Then come back here for routine work.
 
 ---
 
