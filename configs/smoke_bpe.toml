@@ -1,0 +1,42 @@
+# Smoke config — BPE variant. Same shape as smoke.toml but trains a BPE
+# tokenizer at vocab=300 over the same sample data, then trains the same
+# tiny GPT on the BPE-encoded stream. Used by tests/test_train.py to prove
+# the BPE training path works end-to-end and that loss decreases.
+
+[data]
+corpus_paths = ["data/sample/sample.py", "data/sample/sample.ts"]
+val_fraction = 0.1
+
+[tokenizer]
+type = "bpe"
+vocab_size = 300
+
+[model]
+block_size = 32
+n_layer = 2
+n_head = 2
+d_model = 32
+dropout = 0.0
+
+[optim]
+learning_rate = 3e-3
+min_learning_rate = 3e-4
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+[schedule]
+warmup_steps = 10
+max_steps = 100
+
+[loop]
+batch_size = 8
+eval_interval = 50
+eval_iters = 5
+log_interval = 20
+
+[io]
+out_dir = "runs/smoke_bpe"
+seed = 1337
+device = "auto"

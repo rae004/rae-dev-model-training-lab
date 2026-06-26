@@ -30,7 +30,11 @@ from torch.utils.tensorboard import SummaryWriter
 from codereview.config import load_config
 from codereview.data import iter_batches, split_train_val
 from codereview.model import GPT, GPTConfig
-from codereview.tokenizer import CharTokenizer
+from codereview.tokenizer_factory import (
+    Tokenizer,
+    build_tokenizer,
+    tokenizer_to_state,
+)
 
 log = logging.getLogger(__name__)
 
@@ -120,12 +124,18 @@ class TrainConfig:
     out_dir: Path
     seed: int
     device: str
+    # tokenizer (defaults to char-level — keeps every existing config valid)
+    tokenizer_type: str = "char"
+    tokenizer_vocab_size: int | None = None
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "TrainConfig":
+        tok_section = d.get("tokenizer", {})
         return cls(
             corpus_paths=[Path(p) for p in d["data"]["corpus_paths"]],
             val_fraction=d["data"]["val_fraction"],
+            tokenizer_type=tok_section.get("type", "char"),
+            tokenizer_vocab_size=tok_section.get("vocab_size"),
             block_size=d["model"]["block_size"],
             n_layer=d["model"]["n_layer"],
             n_head=d["model"]["n_head"],
@@ -201,19 +211,24 @@ def save_checkpoint(
     optimizer: torch.optim.Optimizer,
     step: int,
     train_cfg: TrainConfig,
-    vocab: list[str],
+    tokenizer: Tokenizer,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "step": step,
-            "config": train_cfg.to_serializable(),
-            "vocab": vocab,
-        },
-        path,
-    )
+    tokenizer_type, tokenizer_state = tokenizer_to_state(tokenizer)
+    payload: dict[str, Any] = {
+        "model": model.state_dict(),
+        "optimizer": optimizer.state_dict(),
+        "step": step,
+        "config": train_cfg.to_serializable(),
+        "tokenizer_type": tokenizer_type,
+        "tokenizer_state": tokenizer_state,
+    }
+    # Legacy `vocab` key for char checkpoints — older readers (including any
+    # in-tree pre-M6 code paths and external scripts) still find what they
+    # expect. For BPE there's no equivalent flat list, so we just omit it.
+    if tokenizer_type == "char":
+        payload["vocab"] = tokenizer_state["vocab"]
+    torch.save(payload, path)
 
 
 def load_checkpoint(path: Path, *, device: torch.device) -> dict[str, Any]:
@@ -243,12 +258,17 @@ def run_training(
     log.info("device=%s", device)
 
     text = read_corpus(train_cfg.corpus_paths)
-    tok = CharTokenizer.from_text(text)
+    tok = build_tokenizer(
+        train_cfg.tokenizer_type,
+        text,
+        bpe_vocab_size=train_cfg.tokenizer_vocab_size,
+    )
     ids = tok.encode(text)
     train_ids, val_ids = split_train_val(ids, train_cfg.val_fraction)
     log.info(
-        "corpus chars=%d vocab=%d train=%d val=%d",
+        "corpus chars=%d tokenizer=%s vocab=%d train_tokens=%d val_tokens=%d",
         len(text),
+        train_cfg.tokenizer_type,
         tok.vocab_size,
         len(train_ids),
         len(val_ids),
@@ -309,7 +329,7 @@ def run_training(
             optimizer=optimizer,
             step=at_step,
             train_cfg=train_cfg,
-            vocab=tok.vocab,
+            tokenizer=tok,
         )
         return losses
 

@@ -14,7 +14,7 @@ from pathlib import Path
 import torch
 
 from .model import GPT, GPTConfig
-from .tokenizer import CharTokenizer
+from .tokenizer_factory import restore_tokenizer_from_state
 from .train import load_checkpoint, resolve_device
 
 log = logging.getLogger(__name__)
@@ -35,9 +35,7 @@ def sample_from_checkpoint(
     ckpt = load_checkpoint(checkpoint_path, device=device)
 
     cfg_dict = ckpt["config"]
-    vocab: list[str] = ckpt["vocab"]
-
-    tok = CharTokenizer(vocab)
+    tok = restore_tokenizer_from_state(ckpt)
     model_cfg = GPTConfig(
         vocab_size=tok.vocab_size,
         block_size=cfg_dict["block_size"],
@@ -57,10 +55,12 @@ def sample_from_checkpoint(
 
     if prompt == "":
         # Empty prompt is awkward (generate() needs at least one token). Seed
-        # the context with the first char of the vocab; the user sees that
-        # char as the first output character.
-        prompt = vocab[0]
-    prompt_ids = torch.tensor([tok.encode(prompt)], dtype=torch.long, device=device)
+        # the context with token id 0 — every tokenizer in this project covers
+        # at least the single id 0 (char vocab is sorted, BPE byte vocab starts
+        # at byte 0). Decoded by the tokenizer at the end like any other token.
+        prompt_ids = torch.tensor([[0]], dtype=torch.long, device=device)
+    else:
+        prompt_ids = torch.tensor([tok.encode(prompt)], dtype=torch.long, device=device)
 
     out = model.generate(
         prompt_ids,

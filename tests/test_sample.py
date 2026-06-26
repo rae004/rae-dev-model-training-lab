@@ -96,3 +96,59 @@ def test_sample_rejects_unknown_prompt_char(trained_checkpoint: Path) -> None:
             max_new_tokens=5,
             device_pref="cpu",
         )
+
+
+# ---------------------------------------------------------------------------
+# BPE checkpoint: end-to-end sample
+# ---------------------------------------------------------------------------
+
+
+def _smoke_bpe_train_cfg(out_dir: Path) -> TrainConfig:
+    cfg = _smoke_train_cfg(out_dir)
+    cfg.tokenizer_type = "bpe"
+    cfg.tokenizer_vocab_size = 280  # 256 bytes + a few merges
+    return cfg
+
+
+@pytest.fixture
+def bpe_trained_checkpoint(tmp_path: Path) -> Path:
+    run_training(_smoke_bpe_train_cfg(tmp_path / "bpe-run"))
+    return tmp_path / "bpe-run" / "ckpt.pt"
+
+
+def test_sample_from_bpe_checkpoint_preserves_prompt(bpe_trained_checkpoint: Path) -> None:
+    prompt = "def "
+    out = sample_from_checkpoint(
+        bpe_trained_checkpoint,
+        prompt,
+        max_new_tokens=20,
+        temperature=0.8,
+        top_k=10,
+        device_pref="cpu",
+        seed=42,
+    )
+    # BPE round-trips through bytes, so prompt prefix must survive verbatim.
+    assert out.startswith(prompt)
+
+
+def test_sample_from_bpe_checkpoint_handles_non_ascii_prompt(
+    bpe_trained_checkpoint: Path,
+) -> None:
+    # The char tokenizer would KeyError on 'é'. BPE is byte-level — encodes
+    # arbitrary UTF-8 by construction, so this must NOT raise.
+    out = sample_from_checkpoint(
+        bpe_trained_checkpoint,
+        "héllo",
+        max_new_tokens=5,
+        device_pref="cpu",
+        seed=0,
+    )
+    assert out.startswith("héllo")
+
+
+def test_sample_from_bpe_checkpoint_is_deterministic(bpe_trained_checkpoint: Path) -> None:
+    args = dict(prompt="class ", max_new_tokens=15, temperature=0.7, top_k=8,
+                device_pref="cpu", seed=11)
+    a = sample_from_checkpoint(bpe_trained_checkpoint, **args)
+    b = sample_from_checkpoint(bpe_trained_checkpoint, **args)
+    assert a == b
