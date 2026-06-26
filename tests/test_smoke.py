@@ -75,3 +75,27 @@ def test_review_subcommand_empty_stdin_exits_2() -> None:
     )
     assert result.returncode == 2
     assert b"no diff on stdin" in result.stderr
+
+
+def test_eval_subcommand_help_runs() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "codereview", "eval", "--help"],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert b"--config" in result.stdout
+    assert b"--eval-set" in result.stdout
+    assert b"--report" in result.stdout
+
+
+def test_eval_subcommand_empty_eval_set_exits_2(tmp_path) -> None:
+    empty = tmp_path / "empty.toml"
+    empty.write_text("", encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-m", "codereview", "eval", "--eval-set", str(empty)],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert b"no cases" in result.stderr

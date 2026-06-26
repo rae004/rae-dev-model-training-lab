@@ -11,7 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="codereview",
         description=(
             "Code review assistant. Subcommands: train (M3), sample (M4), "
-            "review (M7). Eval (M8) arrives in a later milestone."
+            "review (M7), eval (M8)."
         ),
     )
     parser.add_argument("--version", action="version", version=__version__)
@@ -116,6 +116,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override config's backend.model (e.g., qwen2.5-coder).",
     )
 
+    eval_p = subparsers.add_parser(
+        "eval",
+        help="Score review() against a hand-authored eval set (M8).",
+        description=(
+            "Run every case in --eval-set through the configured backend, "
+            "compare to reference findings, and print a precision-aware report."
+        ),
+    )
+    eval_p.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to a review config (e.g., configs/review.toml). Defaults apply if omitted.",
+    )
+    eval_p.add_argument(
+        "--eval-set",
+        type=Path,
+        default=Path("eval/eval_set.toml"),
+        help="Path to the eval set TOML (default: eval/eval_set.toml).",
+    )
+    eval_p.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="If given, write the markdown report to this path (otherwise stdout).",
+    )
+    eval_p.add_argument(
+        "--backend-url",
+        default=None,
+        help="Override config's backend.base_url.",
+    )
+    eval_p.add_argument(
+        "--model",
+        default=None,
+        help="Override config's backend.model.",
+    )
+
     return parser
 
 
@@ -196,6 +233,41 @@ def main(argv: list[str] | None = None) -> int:
 
         assert result.verdict is not None
         return 0 if result.verdict.passed else 1
+
+    if args.command == "eval":
+        import sys
+
+        from .config import load_config
+        from .eval import load_eval_set, render_report, run_eval
+        from .review import ReviewConfig
+
+        cfg_dict = load_config(args.config) if args.config is not None else {}
+        cfg = ReviewConfig.from_dict(cfg_dict)
+        if args.backend_url:
+            cfg.backend.base_url = args.backend_url
+        if args.model:
+            cfg.backend.model = args.model
+
+        cases = load_eval_set(args.eval_set)
+        if not cases:
+            print(f"error: no cases found in {args.eval_set}", file=sys.stderr)
+            return 2
+
+        log.info("running %d eval case(s) against %s", len(cases), cfg.backend.base_url)
+        try:
+            report = run_eval(cases, cfg)
+        except Exception as e:
+            print(f"error: eval failed: {e}", file=sys.stderr)
+            return 2
+
+        text = render_report(report)
+        if args.report:
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(text, encoding="utf-8")
+            log.info("wrote report to %s", args.report)
+        else:
+            print(text)
+        return 0
 
     log.info("codereview %s — no subcommand given; see --help.", __version__)
     return 0
