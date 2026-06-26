@@ -14,14 +14,15 @@ reflects a decision already taken.
 
 ## 1. Hardware and roles
 
-No local machine has a GPU capable of fine-tuning — the only discrete card is a
-2 GB GTX 1050 — so Phase 2 training is offloaded to rented hardware. The 1050
-is, however, ample for Phase 1's tiny models and for partial inference offload.
+No local machine is a primary fine-tuning rig — Phase 2 training is offloaded
+to rented hardware (ADR-003) — but the workhorse runs an RTX 5060 Ti 16GB
+(Blackwell, `sm_120`, GDDR7) per ADR-021 that comfortably hosts the always-on
+reviewer and Phase 1's CUDA track.
 
 | Host | Spec | Role |
 | --- | --- | --- |
 | `rae-dev-command` | Ryzen 9 9900X (12c/24t), 64 GB | **Build plane** — from-scratch experiments (CPU track), fine-tuning orchestration, eval harness |
-| `rae-dev-workhorse` | i7-8700 (6c/12t), 32 GB, GTX 1050 2 GB | **Serving plane** — always-on reviewer (Ollama, partial GPU offload); also the CUDA box: Phase 1 GPU track and local smoke-testing of the cloud training container |
+| `rae-dev-workhorse` | i7-8700 (6c/12t), 32 GB, RTX 5060 Ti 16GB | **Serving plane** — always-on reviewer (Ollama, full GPU offload); also the CUDA box: Phase 1 GPU track and local smoke-testing of the cloud training container |
 | `rae-bot-alpha` | Ryzen 3 3200G (4c), 64 GB | **Data plane** — dataset prep, curation, eval runs |
 | Rented GPU | cloud, burst | Phase 2 QLoRA fine-tuning only |
 
@@ -30,9 +31,10 @@ architecture), so the same lockfile and CPU `torch` wheel resolve identically
 on every box — and on GitHub Actions' `ubuntu-latest` CI runner. An aarch64
 addition would need a second source mapping in `pyproject.toml`.
 
-The GTX 1050 (Pascal, `sm_61`) sits past PyTorch's support line for current
-builds, so the workhorse pins an older PyTorch from the cu126 wheel line in its
-lockfile. Inference via llama.cpp/Ollama is unaffected.
+The 5060 Ti's Blackwell architecture is supported by the current PyTorch
+cu128 wheel line, which the workhorse pins in its own separate venv (the main
+lockfile stays CPU-only — that's the build plane). Inference via
+llama.cpp/Ollama runs fully on the GPU.
 
 ### Machine communication
 
@@ -231,7 +233,7 @@ sequenceDiagram
 Phase 1 produces a disposable from-scratch model (a teaching artifact, not the
 reviewer). Phase 2 fine-tunes a small pretrained code model on a rented GPU into
 the real reviewer — with the training container smoke-tested locally on the
-workhorse's GTX 1050 before any rental time is spent. In both cases the eval
+workhorse's RTX 5060 Ti before any rental time is spent. In both cases the eval
 harness gates whether a candidate is promoted onto the always-on serving plane,
 and Ollama tags give clean versioning and rollback.
 

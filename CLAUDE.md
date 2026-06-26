@@ -7,7 +7,7 @@ all design decisions; your job is implementation within them.
 ## Read before structural work
 
 - `docs/ARCHITECTURE.md` — the system design. Authoritative.
-- `docs/DECISIONS.md` — 20 ADRs. **Append-only.** Never edit, renumber, or
+- `docs/DECISIONS.md` — 21 ADRs. **Append-only.** Never edit, renumber, or
   contradict an ADR. If implementation reveals a decision should change,
   propose a new superseding ADR and stop for human approval.
 - `docs/MILESTONES.md` — the work plan. Implement one milestone at a time, in
@@ -19,8 +19,8 @@ all design decisions; your job is implementation within them.
 
 1. **`uv` only.** Never bare `pip`, never `pip install` into the system. All
    dependencies go through `pyproject.toml` + `uv.lock` (`uv add`, `uv sync`).
-   Exception: the workhorse's pinned cu126 torch is installed per `SETUP.md`,
-   outside the shared lockfile (ADR-014).
+   Exception: the workhorse's pinned cu128 torch is installed per `SETUP.md`,
+   outside the shared lockfile (ADR-021, superseding ADR-014).
 2. **Never commit:** anything under `data/` except `data/sample/`,
    `data/scripts/`, and `data/SOURCES.md`; anything under `checkpoints/`;
    `.env`; model weights or `*.gguf` anywhere. The `.gitignore` encodes this —
@@ -30,8 +30,10 @@ all design decisions; your job is implementation within them.
    are design decisions, not implementation details. Implement them exactly;
    propose changes via ADR, don't drift.
 4. **Training code is fp32 and device-agnostic** (`cpu`/`cuda` selected by
-   config/flag, never hardcoded). No mixed precision (ADR-016: CPU norm, and
-   the Pascal GPU's fp16 is crippled).
+   config/flag, never hardcoded). No mixed precision in Phase 1 (ADR-016).
+   The original fp16 carve-out for Pascal is moot post-ADR-021's Blackwell
+   swap, but the fp32-everywhere rule is independent and still holds —
+   simplicity over speed for the disposable Phase 1 model.
 5. **Decided vs. proposed.** Items marked *(proposed)* in the architecture doc
    (severity levels, category taxonomy, verdict threshold) should be
    implemented as defaults in config — easy to change, never silently changed.

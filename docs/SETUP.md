@@ -71,33 +71,57 @@ another machine at `http://command:6006` (bind with `--bind_all`).
 
 ## 2. `rae-dev-workhorse` — serving plane + CUDA box
 
+Hardware: **RTX 5060 Ti 16GB** (Blackwell, `sm_120`) per ADR-021. The earlier
+GTX 1050 + cu126 setup is preserved in ADR-014 (superseded) and
+git history for anyone reconstructing the old environment.
+
 **NVIDIA driver** (System76's packaging):
 
 ```bash
 sudo apt install -y system76-driver-nvidia
 sudo reboot
-nvidia-smi   # should list the GTX 1050
+nvidia-smi   # should list the RTX 5060 Ti
 ```
 
-**Pinned CUDA PyTorch environment** (see ADR-014). The GTX 1050 is Pascal
-(`sm_61`), which current PyTorch wheels no longer support — this machine's
-training environment pins an older release from the **cu126** wheel line, in a
-*separate* lockfile/venv from the main one:
+If `apt` doesn't pick a Blackwell-ready driver (it needs the 570+ branch),
+install directly from NVIDIA's repo:
 
 ```bash
-# inside the project, in the workhorse-specific environment:
-uv pip install "torch==2.7.*" --index-url https://download.pytorch.org/whl/cu126
+sudo apt install -y nvidia-driver-570         # or 575 / latest stable
+sudo reboot
+nvidia-smi   # CUDA Version: should be 12.8 or higher in the header
+```
+
+**Pinned CUDA PyTorch environment** (see ADR-021). PyTorch's **cu128** wheel
+line supports the 5060 Ti's `sm_120` and is the current generation. Install
+in a *separate* venv from the main one (the main lockfile stays CPU-only —
+that's the build plane behavior):
+
+```bash
+# inside the project on workhorse:
+uv venv .venv-cu128
+source .venv-cu128/bin/activate
+
+# cu128-line torch first (lets uv resolve the right wheel)
+uv pip install torch --index-url https://download.pytorch.org/whl/cu128
+
+# Non-torch deps, then the package itself without re-resolving torch
+uv pip install tensorboard pytest ruff
+uv pip install -e . --no-deps
 ```
 
 Verify CUDA is actually reachable before trusting any benchmark:
 
 ```bash
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-# expect: True  NVIDIA GeForce GTX 1050
+# expect: True  NVIDIA GeForce RTX 5060 Ti
 ```
 
-If a future install rejects the card with an `sm_61` error, the wheel is too
-new — re-pin within the cu126 line.
+If a future PyTorch release drops `sm_120` (won't be soon — Blackwell is the
+current architecture as of writing), repin within the cu128 line or jump to
+whatever the contemporary wheel index is. ADR-021 supersedes ADR-014 on this
+mechanism, but the same "separate workhorse environment" pattern still
+applies.
 
 **Ollama** (the model runtime):
 
