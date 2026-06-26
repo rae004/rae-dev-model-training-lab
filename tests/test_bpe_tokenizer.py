@@ -6,6 +6,8 @@ from codereview.bpe_tokenizer import (
     BPETokenizer,
     _count_pairs,
     _merge_pair,
+    _train_incremental,
+    _train_reference,
 )
 
 
@@ -153,3 +155,64 @@ def test_load_rejects_unknown_version(tmp_path: Path) -> None:
     path.write_text('{"version": 42, "merges": []}', encoding="utf-8")
     with pytest.raises(ValueError, match="unknown BPE tokenizer format"):
         BPETokenizer.load(path)
+
+
+# ---------------------------------------------------------------------------
+# Incremental algorithm: must match the reference byte-for-byte
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text,vocab_size",
+    [
+        # Single-char repeats — exercises the overlapping-pair edge case
+        ("aaaa", 260),
+        ("a" * 50, 280),
+        # Two-character alphabet
+        ("ababab" * 10, 270),
+        # Real ASCII with diverse pairs
+        ("the quick brown fox jumps over the lazy dog", 280),
+        ("the quick brown fox jumps over the lazy dog" * 20, 320),
+        # UTF-8 with multi-byte chars
+        ("naïve café résumé 漢字 🎉", 270),
+        ("naïve café résumé 漢字 🎉" * 30, 300),
+        # Code-shaped text (closer to real corpus)
+        ("def foo(x):\n    return x + 1\n" * 25, 300),
+        ("function add(a: number, b: number): number {\n  return a + b;\n}\n" * 20, 320),
+        # Pathological: 'aaab aaab aaab ...' (chained overlapping merges)
+        ("aaab " * 50, 280),
+        # Edge: vocab_size exactly = 256 (no merges)
+        ("anything", 256),
+        # Edge: empty pair counts hit early
+        ("abc", 400),
+    ],
+)
+def test_incremental_matches_reference(text: str, vocab_size: int) -> None:
+    """The optimized algorithm must produce identical merges to the
+    reference implementation for any input + vocab_size."""
+    ids = list(text.encode("utf-8"))
+    ref = _train_reference(list(ids), vocab_size)
+    fast = _train_incremental(list(ids), vocab_size)
+    assert fast == ref, (
+        f"divergence at first mismatch: ref[:5]={ref[:5]} vs fast[:5]={fast[:5]}"
+    )
+
+
+def test_incremental_overlapping_same_pair_in_aaaa() -> None:
+    """Direct test of the tricky 'aaaa' case: merging (a, a) at positions 0
+    and 2 must work; position 1 (overlapping) must be skipped."""
+    text = "aaaa"
+    merges = _train_incremental(list(text.encode("utf-8")), vocab_size=257)
+    # First merge is necessarily (97, 97) → token 256.
+    # After it, "aaaa" → [256, 256], which we don't merge again at this vocab.
+    assert merges == [(97, 97)]
+
+
+def test_incremental_chained_merges_produce_compression() -> None:
+    """Sanity: training to a generous vocab on a small text should produce
+    one token covering common substrings (the whole point of BPE)."""
+    text = "the the the the the"
+    tok = BPETokenizer.train_from_text(text, vocab_size=400)
+    # 'the' should encode as a single token after training
+    ids = tok.encode("the")
+    assert len(ids) == 1, f"expected 'the' to compress to 1 token, got {ids}"
