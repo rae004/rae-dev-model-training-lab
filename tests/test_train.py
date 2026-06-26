@@ -229,3 +229,62 @@ def test_train_from_config_path_with_smoke_config(tmp_path: Path) -> None:
     assert result["device"] == "cpu"
     assert result["param_count"] > 0
     assert result["final_eval"]["train"] < result["initial_eval"]["train"]
+
+
+# ---------------------------------------------------------------------------
+# BPE-tokenizer end-to-end
+# ---------------------------------------------------------------------------
+
+
+def test_smoke_bpe_config_loads() -> None:
+    cfg = TrainConfig.from_dict(_load_toml(REPO_ROOT / "configs" / "smoke_bpe.toml"))
+    assert cfg.tokenizer_type == "bpe"
+    assert cfg.tokenizer_vocab_size == 300
+
+
+def test_default_tokenizer_is_char() -> None:
+    """Configs without a [tokenizer] section must still load as char."""
+    cfg = TrainConfig.from_dict(_load_toml(REPO_ROOT / "configs" / "smoke.toml"))
+    assert cfg.tokenizer_type == "char"
+    assert cfg.tokenizer_vocab_size is None
+
+
+def test_smoke_bpe_loss_decreases(tmp_path: Path) -> None:
+    cfg_dict = _load_toml(REPO_ROOT / "configs" / "smoke_bpe.toml")
+    cfg_dict["io"]["out_dir"] = str(tmp_path / "smoke_bpe")
+    cfg_dict["io"]["device"] = "cpu"
+    cfg = TrainConfig.from_dict(cfg_dict)
+
+    result = run_training(cfg)
+    assert result["final_eval"]["train"] < result["initial_eval"]["train"], (
+        f"BPE smoke loss did not decrease: "
+        f"initial={result['initial_eval']['train']:.4f} "
+        f"final={result['final_eval']['train']:.4f}"
+    )
+    assert (tmp_path / "smoke_bpe" / "ckpt.pt").exists()
+
+
+def test_bpe_checkpoint_payload_carries_tokenizer_type_and_merges(tmp_path: Path) -> None:
+    cfg_dict = _load_toml(REPO_ROOT / "configs" / "smoke_bpe.toml")
+    cfg_dict["io"]["out_dir"] = str(tmp_path / "run")
+    cfg_dict["io"]["device"] = "cpu"
+    cfg_dict["schedule"]["max_steps"] = 20
+    cfg = TrainConfig.from_dict(cfg_dict)
+    run_training(cfg)
+
+    ckpt = load_checkpoint(tmp_path / "run" / "ckpt.pt", device=torch.device("cpu"))
+    assert ckpt["tokenizer_type"] == "bpe"
+    assert "merges" in ckpt["tokenizer_state"]
+    assert len(ckpt["tokenizer_state"]["merges"]) > 0
+    # No legacy `vocab` key for BPE
+    assert "vocab" not in ckpt
+
+
+def test_char_checkpoint_still_writes_legacy_vocab_key(tmp_path: Path) -> None:
+    """Existing scripts that read ckpt['vocab'] keep working for char models."""
+    cfg = _smoke_train_cfg(tmp_path / "run", max_steps=20)
+    run_training(cfg)
+    ckpt = load_checkpoint(tmp_path / "run" / "ckpt.pt", device=torch.device("cpu"))
+    assert ckpt["tokenizer_type"] == "char"
+    assert "vocab" in ckpt
+    assert ckpt["vocab"] == ckpt["tokenizer_state"]["vocab"]
