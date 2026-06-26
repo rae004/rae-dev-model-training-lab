@@ -147,12 +147,18 @@ Save the output verbatim — it goes in `docs/results.md` (§5 below).
 This is the last unmet M3 done-means clause:
 > *"the identical config runs to completion with `--device cuda`"*
 
+> **Hardware note (2026-06-26, ADR-021):** workhorse is being rebuilt
+> with an RTX 5060 Ti 16GB (Blackwell) replacing the GTX 1050. The
+> cu128-line venv recipe is in SETUP.md §2 — the original cu126 steps
+> below are superseded but kept here verbatim until the rebuild PR
+> updates this section with verified post-rebuild commands and the
+> first measured CUDA wall time.
+
 ### 3a. Set up the workhorse training environment
 
-Per ADR-014 / SETUP.md §2, the workhorse uses a **separate** PyTorch
-pinned to the cu126 line (the main `uv.lock` is CPU-only). The
-cleanest pattern is a parallel venv that doesn't conflict with the
-default `.venv/`:
+Per SETUP.md §2, the workhorse uses a **separate** PyTorch from the
+cu128 wheel line (the main `uv.lock` is CPU-only). The cleanest pattern
+is a parallel venv that doesn't conflict with the default `.venv/`:
 
 ```bash
 ssh workhorse
@@ -160,11 +166,11 @@ cd ~/projects/rae-dev-model-training-lab
 git pull --ff-only main
 
 # Separate venv for the cuda training environment
-uv venv .venv-cu126
-source .venv-cu126/bin/activate
+uv venv .venv-cu128
+source .venv-cu128/bin/activate
 
-# cu126-line torch first
-uv pip install "torch==2.7.*" --index-url https://download.pytorch.org/whl/cu126
+# cu128-line torch first
+uv pip install torch --index-url https://download.pytorch.org/whl/cu128
 
 # Non-torch deps, then the package itself without re-resolving torch
 uv pip install tensorboard pytest ruff
@@ -172,7 +178,7 @@ uv pip install -e . --no-deps
 
 # Verify CUDA actually works
 python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-# → True  NVIDIA GeForce GTX 1050
+# → True  NVIDIA GeForce RTX 5060 Ti
 ```
 
 If `cuda.is_available()` is False, see SETUP.md §2 for driver setup.
@@ -186,7 +192,7 @@ If `cuda.is_available()` is False, see SETUP.md §2 for driver setup.
 ### 3b. Run training
 
 ```bash
-# Still on workhorse, in the cu126 venv
+# Still on workhorse, in the cu128 venv
 python -m codereview train \
     --config configs/char_step1.toml \
     --device cuda
@@ -331,6 +337,15 @@ git -C ~/projects/some-repo diff HEAD~1 \
 ```
 
 ### 6c. Realistic latency on the GTX 1050 (and how to tune)
+
+> **Historical (pre-2026-06-26).** ADR-021 replaces the 1050 with an
+> RTX 5060 Ti 16GB. With 16 GB VRAM, `qwen2.5-coder` runs entirely on
+> the GPU and a PR-sized review drops from minutes to seconds — the
+> `timeout = 550` default in `configs/review.toml` will be reduced and
+> the `num_thread` workaround becomes unnecessary. Concrete
+> post-rebuild numbers will replace this section in the rebuild PR;
+> the 1050-era notes below stay as the snapshot of what was true on
+> the older hardware.
 
 The 1050 has 2 GB VRAM; `qwen2.5-coder` is ~4.7 GB, so most of the model
 runs on the i7-8700 CPU. Concrete numbers observed:
