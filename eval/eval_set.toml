@@ -1,0 +1,266 @@
+# Phase 1 eval set — hand-authored diffs with reference findings.
+#
+# Used by `codereview eval` to score `review()` output against the
+# off-the-shelf Ollama backend (the M8 baseline that any future Phase 2
+# model must beat per ADR-005).
+#
+# Reference findings use only the (severity, category) tuple for matching
+# per the proposed scoring methodology in src/codereview/eval.py. Optional
+# `file` and `message_keywords` fields are documentation today; future
+# stricter scoring may use them.
+#
+# Adding a case: pick something a real reviewer would flag (or shouldn't),
+# write a minimal synthetic diff, and record the *blocking* finding(s).
+# Keep cases small — readers should be able to score them by eye in ~30s.
+
+# ===========================================================================
+# Real bugs — should be flagged as severity=error, category=bug
+# ===========================================================================
+
+[[cases]]
+name = "off-by-one-loop"
+description = "Loop terminates one iteration short, missing the last element."
+expected_verdict_passed = false
+diff = """
+diff --git a/src/sum.py b/src/sum.py
+@@
+-def total(xs):
+-    s = 0
+-    for i in range(len(xs)):
+-        s += xs[i]
+-    return s
++def total(xs):
++    s = 0
++    for i in range(len(xs) - 1):
++        s += xs[i]
++    return s
+"""
+findings = [
+    { severity = "error", category = "bug", message_keywords = ["off-by-one", "loop", "last"] },
+]
+
+[[cases]]
+name = "retry-on-auth-failure"
+description = "API client retries 401 responses, masking a permanent auth failure."
+expected_verdict_passed = false
+diff = """
+diff --git a/src/client.ts b/src/client.ts
+@@
+-async function fetchWithRetry(url: string) {
+-  const res = await fetch(url);
+-  if (!res.ok) throw new Error(res.statusText);
+-  return res.json();
+-}
++async function fetchWithRetry(url: string) {
++  for (let attempt = 0; attempt < 5; attempt++) {
++    const res = await fetch(url);
++    if (res.ok) return res.json();
++    await sleep(1000 * attempt);
++  }
++  throw new Error("exhausted retries");
++}
+"""
+findings = [
+    { severity = "error", category = "bug", message_keywords = ["401", "retry", "auth", "fail-fast"] },
+]
+
+# ===========================================================================
+# Security smells — error, category=security
+# ===========================================================================
+
+[[cases]]
+name = "sql-injection"
+description = "User input concatenated into raw SQL."
+expected_verdict_passed = false
+diff = """
+diff --git a/src/db.py b/src/db.py
+@@
+-def find_user(conn, username):
+-    cur = conn.cursor()
+-    cur.execute("SELECT * FROM users WHERE name = ?", (username,))
+-    return cur.fetchone()
++def find_user(conn, username):
++    cur = conn.cursor()
++    cur.execute(f"SELECT * FROM users WHERE name = '{username}'")
++    return cur.fetchone()
+"""
+findings = [
+    { severity = "error", category = "security", message_keywords = ["sql", "injection", "parameterized"] },
+]
+
+[[cases]]
+name = "hardcoded-secret"
+description = "API key checked into source code."
+expected_verdict_passed = false
+diff = """
+diff --git a/src/api.py b/src/api.py
+@@
+-API_KEY = os.environ["MY_API_KEY"]
++API_KEY = "sk-live-abc123def456ghi789jkl"
+"""
+findings = [
+    { severity = "error", category = "security", message_keywords = ["hardcoded", "secret", "api key", "env"] },
+]
+
+# ===========================================================================
+# Missing tests — warning, category=test-gap
+# ===========================================================================
+
+[[cases]]
+name = "new-function-no-tests"
+description = "Public utility added with no test coverage and at least one error path."
+expected_verdict_passed = true
+diff = """
+diff --git a/src/util.py b/src/util.py
+@@
++def parse_duration(s: str) -> int:
++    \"\"\"Parse '10s' / '5m' / '2h' into seconds.\"\"\"
++    if s.endswith("s"):
++        return int(s[:-1])
++    if s.endswith("m"):
++        return int(s[:-1]) * 60
++    if s.endswith("h"):
++        return int(s[:-1]) * 3600
++    raise ValueError(f"unknown unit: {s}")
+"""
+findings = [
+    { severity = "warning", category = "test-gap", message_keywords = ["test", "coverage", "missing"] },
+]
+
+# ===========================================================================
+# Design — warning, category=design
+# ===========================================================================
+
+[[cases]]
+name = "god-function"
+description = "100+ line function mixing parsing, validation, IO, and notification."
+expected_verdict_passed = true
+diff = """
+diff --git a/src/handler.py b/src/handler.py
+@@
++def process_order(raw):
++    # parse
++    parts = raw.split(",")
++    if len(parts) != 8: raise ValueError("bad input")
++    item_id, qty_s, user_s, addr, city, zip_, email, notes = parts
++    # validate
++    if not item_id.startswith("ITM-"): raise ValueError("bad id")
++    qty = int(qty_s)
++    if qty < 1 or qty > 100: raise ValueError("bad qty")
++    user_id = int(user_s)
++    if "@" not in email: raise ValueError("bad email")
++    # lookup
++    conn = sqlite3.connect("orders.db")
++    cur = conn.cursor()
++    cur.execute("SELECT price FROM items WHERE id = ?", (item_id,))
++    row = cur.fetchone()
++    if not row: raise LookupError("no such item")
++    price = row[0]
++    total = price * qty
++    # write
++    cur.execute("INSERT INTO orders VALUES (?, ?, ?, ?, ?)",
++                (item_id, user_id, qty, total, addr))
++    conn.commit()
++    # notify
++    send_email(email, f"Order confirmed: ${total}")
++    log.info("processed order for %s", user_id)
++    return total
+"""
+findings = [
+    { severity = "warning", category = "design", message_keywords = ["function", "responsibility", "extract", "long"] },
+]
+
+# ===========================================================================
+# Performance — warning, category=performance
+# ===========================================================================
+
+[[cases]]
+name = "n-plus-one"
+description = "Loop issues a DB query per element instead of batching."
+expected_verdict_passed = true
+diff = """
+diff --git a/src/users.py b/src/users.py
+@@
++def get_user_names(user_ids):
++    names = []
++    for uid in user_ids:
++        row = db.execute("SELECT name FROM users WHERE id = ?", (uid,)).fetchone()
++        names.append(row[0])
++    return names
+"""
+findings = [
+    { severity = "warning", category = "performance", message_keywords = ["n+1", "n plus one", "batch", "IN"] },
+]
+
+# ===========================================================================
+# Readability — info, category=readability
+# ===========================================================================
+
+[[cases]]
+name = "cryptic-names"
+description = "Single-letter variable names obscure intent."
+expected_verdict_passed = true
+diff = """
+diff --git a/src/calc.py b/src/calc.py
+@@
++def f(a, b, c):
++    x = a * b
++    y = x + c
++    z = y / 2
++    return z
+"""
+findings = [
+    { severity = "info", category = "readability", message_keywords = ["name", "intent", "rename"] },
+]
+
+# ===========================================================================
+# Clean cases (LGTM) — model should return empty findings
+# ===========================================================================
+
+[[cases]]
+name = "lgtm-rename-only"
+description = "Pure rename refactor with no behavior change."
+expected_verdict_passed = true
+diff = """
+diff --git a/src/util.py b/src/util.py
+@@
+-def make_url(host, path):
+-    return f"https://{host}{path}"
++def build_url(host, path):
++    return f"https://{host}{path}"
+"""
+findings = []
+
+[[cases]]
+name = "lgtm-typing-improvement"
+description = "Adds type hints to an existing pure function. No behavior change."
+expected_verdict_passed = true
+diff = """
+diff --git a/src/math.py b/src/math.py
+@@
+-def add(a, b):
+-    return a + b
++def add(a: float, b: float) -> float:
++    return a + b
+"""
+findings = []
+
+[[cases]]
+name = "lgtm-test-added-with-feature"
+description = "New utility shipped with a test for it. Should not flag test-gap."
+expected_verdict_passed = true
+diff = """
+diff --git a/src/util.py b/src/util.py
+@@
++def slugify(s: str) -> str:
++    return s.strip().lower().replace(" ", "-")
+
+diff --git a/tests/test_util.py b/tests/test_util.py
+@@
++def test_slugify_basic():
++    assert slugify("Hello World") == "hello-world"
++
++def test_slugify_strips_whitespace():
++    assert slugify("  foo  ") == "foo"
+"""
+findings = []
