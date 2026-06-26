@@ -15,24 +15,50 @@ uv run python data/scripts/tokens_per_kb.py --corpus <path>
 
 - **Corpus sample:** the first 200 KB (195.3 KB UTF-8) of
   `data/corpus.txt` from the pruned ablation re-run (PR #14). A sample
-  is used because the from-scratch BPE is the simple O(N)-per-merge
-  reference impl from `src/codereview/bpe_tokenizer.py`; full-corpus
-  measurement would take hours. The compression *ratio* per vocab size
-  is corpus-distribution-dependent but stable across reasonably-sized
-  samples of the same corpus.
-- **Hardware:** `command` (Ryzen 9 9900X, CPU). 9 minutes total wall
-  for the run on the sample, dominated by BPE training time.
+  is used so the table is reproducible in seconds; the compression
+  *ratio* per vocab size is corpus-distribution-dependent but stable
+  across reasonably-sized samples of the same corpus.
+- **Hardware:** `command` (Ryzen 9 9900X, CPU).
+- **Algorithm:** the incremental BPE from PR #19's perf optimization
+  (replaces the original O(N)-per-merge reference impl, byte-identical
+  output, ~10–20× faster). See "BPE training-time was the bottleneck"
+  below for the comparison.
 
 ## Results
 
 | tokenizer | vocab | tokens | tokens / KB | bytes / token | compression vs. char | train s | encode s |
 | --- | ---:| ---:| ---:| ---:| ---:| ---:| ---:|
 | char-level | 103 | 183,030 | 937.11 | 1.093 | 1.00× | 0.0 | 0.0 |
-| BPE | 512 | 86,816 | 444.50 | 2.304 | **2.11×** | 4.5 | 2.3 |
-| BPE | 1,024 | 59,558 | 304.94 | 3.358 | **3.07×** | 11.4 | 5.4 |
-| BPE | 2,048 | 40,314 | 206.41 | 4.961 | **4.54×** | 21.4 | 9.7 |
-| BPE | 4,096 | 26,220 | 134.25 | 7.628 | **6.98×** | 36.1 | 15.2 |
-| BPE | 8,192 | 15,354 | 78.61 | 13.026 | **11.92×** | 56.4 | 22.3 |
+| BPE | 512 | 86,816 | 444.50 | 2.304 | **2.11×** | 0.3 | 2.3 |
+| BPE | 1,024 | 59,558 | 304.94 | 3.358 | **3.07×** | 0.6 | 5.4 |
+| BPE | 2,048 | 40,314 | 206.41 | 4.961 | **4.54×** | 1.6 | 9.7 |
+| BPE | 4,096 | 26,220 | 134.25 | 7.628 | **6.98×** | 3.6 | 15.3 |
+| BPE | 8,192 | 15,354 | 78.61 | 13.026 | **11.92×** | 7.5 | 22.7 |
+
+### BPE training-time was the bottleneck (the M5 → M6 perf story)
+
+The original reference BPE in PR #15 was O(N) per merge step. On the
+same 200 KB sample its training column was: 4.5 → 11.4 → 21.4 → 36.1 →
+56.4 s. Extrapolating to the full 54.7 MB corpus at vocab 4096
+projected **~hours of training time** — prohibitive for M6.
+
+The incremental algorithm shipped in PR #19 maintains pair counts +
+position sets via a doubly-linked-list view of the token stream, so
+each merge is O(occurrences of the chosen pair), not O(N). Output is
+**byte-identical** (validated by `test_incremental_matches_reference`
+across 12 diverse inputs). Speedup vs. reference at this sample:
+
+| vocab | reference s | incremental s | speedup |
+| ---:| ---:| ---:| ---:|
+| 512 | 4.5 | 0.3 | **15×** |
+| 1,024 | 11.4 | 0.6 | **19×** |
+| 2,048 | 21.4 | 1.6 | **13×** |
+| 4,096 | 36.1 | 3.6 | **10×** |
+| 8,192 | 56.4 | 7.5 | **7.5×** |
+
+This unblocks training BPE-4096 on the full corpus for M6 (projected
+~16 min wall, vs. hours+ with the reference). Encode-time is unchanged
+— `BPETokenizer.encode` was never the bottleneck.
 
 ## What the table says
 
@@ -71,11 +97,10 @@ baby-GPT. Based on this table:
   compression gain — still worth it for the baby-GPT's headline learning
   run, especially since the BPE training is a one-time cost amortized
   across all subsequent model training.
-- The from-scratch BPE will need to be optimized (incremental pair
-  counts, hash-keyed merge lookup) or replaced (`tiktoken`,
-  `sentencepiece`) before training on the full pruned 54.7 MB corpus
-  with vocab 4096+ — projected ~hours of training time with the
-  reference impl. Filed as a follow-up for whoever runs M6.
+- ~~The from-scratch BPE will need to be optimized~~ — done in PR #19
+  (incremental pair counts via linked-list view of the token stream).
+  M6 now trains BPE-4096 on the full corpus in tractable time (~16 min
+  projected from the sample numbers above).
 
 ## Why bytes, not codepoints
 
