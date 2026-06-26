@@ -11,7 +11,12 @@ val_fraction = 0.1
 
 [tokenizer]
 type = "bpe"
-vocab_size = 4096
+# Pretrained on data/corpus.txt with data/scripts/pretrain_bpe.py (committed
+# at ~46 KB). Saves a few minutes on every M6 training run vs. retraining BPE
+# from scratch, and ensures every ablation uses the same vocab for clean
+# model-to-model comparisons. To retrain from scratch instead, omit `path`
+# and set `vocab_size = 4096`.
+path = "data/tokenizers/bpe_4096.json"
 
 [model]
 block_size = 256

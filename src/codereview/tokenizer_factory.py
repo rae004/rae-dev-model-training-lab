@@ -22,6 +22,7 @@ treats a missing `tokenizer_type` as `"char"` and rebuilds from `vocab`.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from .bpe_tokenizer import BPETokenizer
@@ -45,17 +46,27 @@ def build_tokenizer(
     text: str,
     *,
     bpe_vocab_size: int | None = None,
+    bpe_path: Path | str | None = None,
 ) -> Tokenizer:
-    """Train a tokenizer on `text` per `tokenizer_type`.
+    """Train (or load) a tokenizer per `tokenizer_type`.
 
     For "char": vocab is the sorted set of unique characters in `text`.
-    For "bpe": train BPE up to `bpe_vocab_size` (required).
+    For "bpe":
+      - If `bpe_path` is given, load the saved BPE from disk and ignore
+        `bpe_vocab_size` and `text`. This is the M6 path — train BPE
+        once per corpus with `data/scripts/pretrain_bpe.py`, commit
+        the artifact, then load it for each subsequent model run.
+      - Otherwise, train BPE up to `bpe_vocab_size` (required) on `text`.
     """
     if tokenizer_type == "char":
         return CharTokenizer.from_text(text)
     if tokenizer_type == "bpe":
+        if bpe_path is not None:
+            return BPETokenizer.load(bpe_path)
         if bpe_vocab_size is None:
-            raise ValueError("tokenizer_type='bpe' requires bpe_vocab_size")
+            raise ValueError(
+                "tokenizer_type='bpe' requires either bpe_path or bpe_vocab_size"
+            )
         return BPETokenizer.train_from_text(text, vocab_size=bpe_vocab_size)
     raise ValueError(f"unknown tokenizer_type: {tokenizer_type!r}")
 

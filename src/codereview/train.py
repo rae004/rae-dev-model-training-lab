@@ -127,6 +127,10 @@ class TrainConfig:
     # tokenizer (defaults to char-level — keeps every existing config valid)
     tokenizer_type: str = "char"
     tokenizer_vocab_size: int | None = None
+    # Optional path to a pretrained BPE merge file (see
+    # data/scripts/pretrain_bpe.py). When set with tokenizer_type='bpe',
+    # the tokenizer loads from disk instead of training fresh on the corpus.
+    tokenizer_path: Path | None = None
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "TrainConfig":
@@ -136,6 +140,7 @@ class TrainConfig:
             val_fraction=d["data"]["val_fraction"],
             tokenizer_type=tok_section.get("type", "char"),
             tokenizer_vocab_size=tok_section.get("vocab_size"),
+            tokenizer_path=Path(tok_section["path"]) if "path" in tok_section else None,
             block_size=d["model"]["block_size"],
             n_layer=d["model"]["n_layer"],
             n_head=d["model"]["n_head"],
@@ -162,6 +167,8 @@ class TrainConfig:
         d = asdict(self)
         d["corpus_paths"] = [str(p) for p in self.corpus_paths]
         d["out_dir"] = str(self.out_dir)
+        if self.tokenizer_path is not None:
+            d["tokenizer_path"] = str(self.tokenizer_path)
         return d
 
 
@@ -262,6 +269,7 @@ def run_training(
         train_cfg.tokenizer_type,
         text,
         bpe_vocab_size=train_cfg.tokenizer_vocab_size,
+        bpe_path=train_cfg.tokenizer_path,
     )
     ids = tok.encode(text)
     train_ids, val_ids = split_train_val(ids, train_cfg.val_fraction)

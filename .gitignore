@@ -30,11 +30,13 @@ dist/
 checkpoints/
 
 # Data: ignore everything in data/ except the committed scaffolding
-# (sample/, scripts/, SOURCES.md per CLAUDE.md rule 2)
+# (sample/, scripts/, SOURCES.md per CLAUDE.md rule 2) and the
+# pretrained tokenizers in data/tokenizers/ (small JSON artifacts).
 data/*
 !data/sample/
 !data/scripts/
 !data/SOURCES.md
+!data/tokenizers/
 
 # Training run outputs / logs
 runs/

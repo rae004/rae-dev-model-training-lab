@@ -240,6 +240,30 @@ def test_smoke_bpe_config_loads() -> None:
     cfg = TrainConfig.from_dict(_load_toml(REPO_ROOT / "configs" / "smoke_bpe.toml"))
     assert cfg.tokenizer_type == "bpe"
     assert cfg.tokenizer_vocab_size == 300
+    assert cfg.tokenizer_path is None
+
+
+def test_baby_gpt_config_loads_with_pretrained_tokenizer() -> None:
+    cfg = TrainConfig.from_dict(_load_toml(REPO_ROOT / "configs" / "baby_gpt.toml"))
+    assert cfg.tokenizer_type == "bpe"
+    assert cfg.tokenizer_path is not None
+    assert cfg.tokenizer_path.as_posix() == "data/tokenizers/bpe_4096.json"
+    # The committed tokenizer must actually exist and load
+    full_path = REPO_ROOT / cfg.tokenizer_path
+    assert full_path.exists(), f"committed pretrained tokenizer missing at {full_path}"
+
+
+def test_pretrained_bpe_4096_loads_and_round_trips() -> None:
+    """The committed pretrained tokenizer must be a valid BPETokenizer with
+    vocab_size == 4096 and must round-trip arbitrary UTF-8."""
+    from codereview.bpe_tokenizer import BPETokenizer
+
+    tok = BPETokenizer.load(REPO_ROOT / "data" / "tokenizers" / "bpe_4096.json")
+    assert tok.vocab_size == 4096
+    # Round-trip a small piece of code (not in training set, but byte-level
+    # BPE works on any UTF-8 input by construction)
+    text = "def hello():\n    return 'world'\n"
+    assert tok.decode(tok.encode(text)) == text
 
 
 def test_default_tokenizer_is_char() -> None:
