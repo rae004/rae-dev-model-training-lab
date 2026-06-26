@@ -1,0 +1,44 @@
+# ADR-016 step-2 spec: small-BPE baby-GPT — the headline Phase 1 run.
+#
+# ~10 M params with BPE-encoded input (vocab 4096 per the M5 measurement
+# in docs/tokenizer-comparison.md; sweet-spot compression vs. embedding-
+# table cost). Trained on the pruned corpus from PR #13/#14, post-corpus-
+# excludes. Lands on workhorse with --device cuda per ADR-021.
+
+[data]
+corpus_paths = ["data/corpus.txt"]
+val_fraction = 0.1
+
+[tokenizer]
+type = "bpe"
+vocab_size = 4096
+
+[model]
+block_size = 256
+n_layer = 6
+n_head = 6
+d_model = 384
+dropout = 0.0
+
+[optim]
+learning_rate = 3e-4
+min_learning_rate = 3e-5
+weight_decay = 0.1
+beta1 = 0.9
+beta2 = 0.95
+grad_clip = 1.0
+
+[schedule]
+warmup_steps = 500
+max_steps = 10000
+
+[loop]
+batch_size = 32
+eval_interval = 500
+eval_iters = 50
+log_interval = 100
+
+[io]
+out_dir = "runs/baby_gpt"
+seed = 1337
+device = "auto"
