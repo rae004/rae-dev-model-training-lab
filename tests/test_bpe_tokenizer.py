@@ -216,3 +216,73 @@ def test_incremental_chained_merges_produce_compression() -> None:
     # 'the' should encode as a single token after training
     ids = tok.encode("the")
     assert len(ids) == 1, f"expected 'the' to compress to 1 token, got {ids}"
+
+
+# ---------------------------------------------------------------------------
+# Incremental encode: must match the reference byte-for-byte
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "train_text,encode_text,vocab_size",
+    [
+        # Train and encode on the same text — typical training-pipeline case
+        ("the the the cat sat on the mat" * 30, "the the the cat sat on the mat" * 30, 300),
+        # Encode on text the tokenizer was never trained on
+        ("the the the cat sat on the mat" * 30, "completely different text", 300),
+        # Overlapping same-pair edge case in encode input
+        ("aaaa" * 50, "aaaa", 260),
+        ("aaaa" * 50, "aaaaaaaaaaaaaaaaaaaa", 270),
+        # Unicode round-trip via byte fallback
+        ("naïve café résumé 漢字 🎉" * 10, "novel ümläüt αβγ ✨", 280),
+        # Code-shaped text with rich merge structure
+        (
+            "def foo(x):\n    return x + 1\n" * 30,
+            "def bar(y):\n    return y * 2\n",
+            320,
+        ),
+        # Pathological: chain of overlapping merges within encode input
+        ("aaab " * 50, "aaaaab aab b", 280),
+        # Single-byte input — no pairs, immediate return
+        ("hello", "x", 300),
+        # Empty input — edge case
+        ("hello world hello", "", 280),
+    ],
+)
+def test_encode_incremental_matches_reference(
+    train_text: str, encode_text: str, vocab_size: int
+) -> None:
+    """The fast encode must produce identical output to the reference encode
+    for any (trained tokenizer, input text) pair."""
+    tok = BPETokenizer.train_from_text(train_text, vocab_size=vocab_size)
+    ref = tok._encode_reference(encode_text)
+    fast = tok.encode(encode_text)
+    assert fast == ref, (
+        f"divergence: ref={ref[:20]}{'...' if len(ref) > 20 else ''} "
+        f"vs fast={fast[:20]}{'...' if len(fast) > 20 else ''}"
+    )
+
+
+def test_encode_incremental_handles_empty_input() -> None:
+    """Edge case: empty string must encode to empty list (not crash on n<2)."""
+    tok = BPETokenizer.train_from_text("hello world", vocab_size=280)
+    assert tok.encode("") == []
+
+
+def test_encode_incremental_handles_single_byte_input() -> None:
+    """Edge case: single byte has no pairs to merge."""
+    tok = BPETokenizer.train_from_text("aaaa", vocab_size=260)
+    # 'a' is byte 97
+    assert tok.encode("a") == [97]
+
+
+def test_encode_incremental_overlapping_same_pair_left_to_right() -> None:
+    """For overlapping (a, a) merges in 'aaaa', the heap must process
+    positions left-to-right so output matches the reference's greedy
+    non-overlapping left-to-right behavior."""
+    tok = BPETokenizer.train_from_text("aaaa" * 30, vocab_size=257)
+    # Single merge learned: (a, a) → 256.
+    # Encoding 'aaaaa' (5 a's): positions 0+1 merge to 256, positions 2+3
+    # merge to 256, position 4 left alone → [256, 256, 97]
+    result = tok.encode("aaaaa")
+    assert result == [256, 256, 97]
