@@ -25,6 +25,7 @@ merged), so the decode table is recursive — built once at construction.
 
 from __future__ import annotations
 
+import heapq
 import json
 from collections import Counter
 from pathlib import Path
@@ -99,10 +100,24 @@ class BPETokenizer:
     # ----- encode / decode -------------------------------------------
 
     def encode(self, text: str) -> list[int]:
-        """Greedy lowest-rank-first merging. Returns token ids."""
+        """Greedy lowest-rank-first merging. Returns token ids.
+
+        Dispatches to `_encode_incremental` (heap + linked list, O((N+M) log M)
+        where M is the number of applicable merges). Output is byte-identical
+        to `_encode_reference` for any input.
+        """
+        ids: list[int] = list(text.encode("utf-8"))
+        return _encode_incremental(ids, self._rank)
+
+    def _encode_reference(self, text: str) -> list[int]:
+        """The original O(N × num_merges_applied) implementation.
+
+        Kept as the authoritative correctness spec for `encode`. Identical
+        output (by definition); ~100× slower on full-corpus inputs. Used in
+        tests to cross-validate the incremental implementation.
+        """
         ids: list[int] = list(text.encode("utf-8"))
         while len(ids) >= 2:
-            # Pick the pair in ids with the lowest learned-merge rank.
             best_rank = None
             best_pair: Pair | None = None
             for pair in zip(ids, ids[1:]):
@@ -298,3 +313,89 @@ def _train_incremental(ids: list[int], vocab_size: int) -> list[Pair]:
         merges.append(best_pair)
 
     return merges
+
+
+def _encode_incremental(ids: list[int], rank: dict[Pair, int]) -> list[int]:
+    """Greedy lowest-rank-first BPE encode via heap + linked list.
+
+    The reference implementation (in `BPETokenizer._encode_reference`) does
+    one full scan per merge "round" to find the lowest-rank pair, then a
+    second scan to apply it everywhere — O(N × num_merges_applied), which is
+    fine for short inputs but impractical for the 50 MB+ corpora M6 trains
+    on. This version processes merges in rank order via a min-heap and
+    applies each one in O(1) via a linked-list view of the token stream.
+
+    Output is byte-identical to `_encode_reference` for any input. Verified
+    by `test_encode_incremental_matches_reference` over diverse fixtures.
+
+    Complexity is O((N + M) log M) where N is input length and M is the
+    number of merge operations actually applied — at most one heap entry
+    is pushed per byte initially and at most two per applied merge.
+    """
+    n = len(ids)
+    if n < 2:
+        return list(ids)
+
+    # Linked-list view of the token stream. Same shape as in
+    # `_train_incremental` — merging at position i sets alive[i+next] = False
+    # and re-links next_idx/prev_idx around the dead slot.
+    tokens = list(ids)
+    alive = [True] * n
+    next_idx = list(range(1, n + 1))  # next_idx[n-1] = n  (end sentinel)
+    prev_idx = [-1] + list(range(n - 1))  # prev_idx[0] = -1 (start sentinel)
+
+    # Min-heap entries are (rank, left_idx). Ties break on left_idx, which
+    # matches `_merge_pair`'s left-to-right behavior — important for
+    # overlapping-same-pair cases like (a, a) in "aaaa".
+    heap: list[tuple[int, int]] = []
+    for i in range(n - 1):
+        pair_rank = rank.get((tokens[i], tokens[i + 1]))
+        if pair_rank is not None:
+            heapq.heappush(heap, (pair_rank, i))
+
+    while heap:
+        popped_rank, left_i = heapq.heappop(heap)
+        if not alive[left_i]:
+            continue
+        right_i = next_idx[left_i]
+        if right_i >= n or not alive[right_i]:
+            continue
+        # Stale-entry check: the pair at this position may have changed since
+        # we pushed this heap entry (because a neighbor merged first and
+        # replaced one of these tokens). Re-look-up the actual current rank.
+        current_pair = (tokens[left_i], tokens[right_i])
+        current_rank = rank.get(current_pair)
+        if current_rank != popped_rank:
+            continue
+
+        new_id = _BYTE_VOCAB_SIZE + popped_rank
+
+        # Apply the merge: left_i now holds new_id, right_i is dead.
+        ni = next_idx[right_i]
+        tokens[left_i] = new_id
+        alive[right_i] = False
+        next_idx[left_i] = ni
+        if ni < n:
+            prev_idx[ni] = left_i
+
+        # Push new pairs that may have formed on the boundaries.
+        pi = prev_idx[left_i]
+        if pi >= 0:
+            new_left_pair = (tokens[pi], new_id)
+            new_left_rank = rank.get(new_left_pair)
+            if new_left_rank is not None:
+                heapq.heappush(heap, (new_left_rank, pi))
+        if ni < n:
+            new_right_pair = (new_id, tokens[ni])
+            new_right_rank = rank.get(new_right_pair)
+            if new_right_rank is not None:
+                heapq.heappush(heap, (new_right_rank, left_i))
+
+    # Walk the linked list to collect surviving tokens in order.
+    out: list[int] = []
+    i = 0
+    while i < n:
+        if alive[i]:
+            out.append(tokens[i])
+        i += 1
+    return out
