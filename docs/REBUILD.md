@@ -407,7 +407,9 @@ When all four return what's expected, workhorse is ready.
 
 ## 9. Close M3's `--device cuda` clause
 
-The last unmet M3 done-means. Smoke first:
+The last unmet M3 done-means.
+
+### 9a. Smoke first (uses committed sample data, no corpus needed)
 
 ```bash
 ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
@@ -416,7 +418,28 @@ ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
 # → expect "device=cuda", decreasing loss, "training done"
 ```
 
-Then the real char-level run:
+The smoke uses `data/sample/sample.py` + `data/sample/sample.ts` which
+*are* committed, so this works on a brand-new workhorse with nothing
+else copied over. Finishes in seconds.
+
+### 9b. Copy the corpus from command (ADR-015)
+
+`data/corpus.txt` is git-ignored (ADR-018: corpus is regenerable, not
+committed). The corpus only exists on `command` where you built it
+via `prep_corpus.py`. For the real char-level run on workhorse, rsync
+it across per ADR-015's artifact-handoff pattern:
+
+```bash
+# [cmd]
+rsync -av --progress data/corpus.txt workhorse:~/projects/rae-dev-model-training-lab/data/
+# ~5 sec on LAN; 54 MB
+```
+
+Alternative: regenerate on workhorse by running `prep_corpus.py`
+there (re-clones the public sources, takes ~30 sec). rsync is the
+documented path.
+
+### 9c. The real char-level run
 
 ```bash
 ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
@@ -424,11 +447,17 @@ ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
     python -m codereview train --config configs/char_step1.toml --device cuda'
 ```
 
-Wall time + final loss go into a new `docs/results.md` entry.
+PR #14's CPU baseline on this same config was ~11 min on command
+(24-thread Ryzen 9 9900X). On the 5060 Ti, expect a small fraction of
+that. The wall time + final loss go into a new `docs/results.md`
+entry comparing CPU vs CUDA.
 
 ---
 
 ## 10. M6: baby-GPT on BPE
+
+Needs `data/corpus.txt` on workhorse — already in place if you did §9b,
+otherwise rsync it now.
 
 ```bash
 ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
