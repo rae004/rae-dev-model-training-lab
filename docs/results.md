@@ -44,6 +44,189 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-06-28 — M6: baby-GPT on BPE (closes M6, Phase 1 main learning artifact)
+
+First end-to-end run of the ADR-016 step-2 spec: ~14 M-param GPT trained
+on BPE-4096 encoded tokens, on the new 5060 Ti. **The headline Phase 1
+learning artifact.** Two samples below tell the real story.
+
+- **Commit:** `e77078d` (PR #24 merged earlier this same session)
+- **Config:** `configs/baby_gpt.toml`
+- **Corpus:** `data/corpus.txt` (54.7 MB pruned), BPE-encoded to 10.88 M tokens
+- **Tokenizer:** BPE trained from scratch on the corpus, **vocab=4096**
+  (trained inline at run start — ~3-5 min of the wall time below)
+- **Device:** workhorse, RTX 5060 Ti 16 GB (Blackwell, `sm_120`),
+  cu128 PyTorch venv per ADR-021
+
+#### Results
+
+| | value |
+| --- | ---:|
+| **param_count** | **13.88 M** (slightly above ADR-016's "~10 M" estimate — block_size=256 + vocab=4096 grew the embedding table) |
+| **Total wall time** | **~24.5 min** |
+| ↳ BPE training + corpus encode | ~9 min (CPU, single-threaded) |
+| ↳ Model training (10 000 steps) | **~15.5 min** on the 5060 Ti |
+| **Throughput** | ~10.7 steps/sec × 32 × 256 tokens = **~87 k tokens/sec** |
+| **Initial train loss** | 8.38 (≈ random over 4096 tokens) |
+| **Final train loss** | **1.47** |
+| **Final val loss** | 4.30 |
+| **Min val loss** | **4.16 at step 8000** |
+
+#### The overfitting story (the headline lesson)
+
+| | train | val | gap |
+| --- | ---:| ---:| ---:|
+| Char-level (M3 closure, 920 k params) | 0.94 | 0.88 | val *better* than train |
+| **Baby-GPT (this run, 13.88 M params)** | **1.47** | **4.30** | **2.93×** |
+
+Val bottomed at step 8000 (1500 steps shy of the end) then rose while
+train kept dropping — textbook *should-have-stopped-earlier*. Same
+shape as the char-level long run from PR #14, but **amplified** by the
+~15× capacity increase (920 k → 13.88 M params) on essentially the
+same dataset (10.88 M tokens). Capacity outran the data's structure;
+the model started memorizing instead of generalizing.
+
+Three honest fixes for a future run:
+1. **Dropout** (currently 0.0) — the easiest first lever
+2. **Weight decay** — already 0.1, could go higher
+3. **More data** — Phase 2's curated review dataset will be a totally
+   different corpus shape, so this is a Phase 1 lesson, not a Phase 2
+   blocker
+
+#### Samples
+
+The two samples below make the memorization visible. Both use the same
+checkpoint, same seed, just different prompts.
+
+**Python (`--prompt "def "` — memorizes FastAPI):**
+
+```python
+def post(
+        self,
+        url: str,
+        title: str | None = None,
+        description: str | None = None,
+        gt: float | None = None,
+        price: float | None = None,
+        ge: float | None = None,
+        ge: int | None = None,
+        ge: float | None = None,
+        min_n: int | None = None,
+        min_length: int | None = None,
+        max_length: int | None = None,
+        pattern: str | None = None,
+        regex: int | None = None,
+        discriminator: str | None = None,
+        strict: bool | None = None,
+        strict: bool | None = None,
+        include_in_schema: bool | None = False,
+        ...
+        **Ex: Annotated[
+            Any,
+            Doc,
+            Doc(
+                """
+                Include this response.
+
+                You could be the sent serializer (without the response directly API).
+
+                Read more about it in the
+                [FastAPI docs for Custom Response - HTML, Stream, File, others](https://fastapi.tiangolo.com/advanced/custom-response/#redirectresponse).
+                """
+            ),
+        ] = Default(JSONResponse),
+```
+
+The smoking gun: that URL is **verbatim from FastAPI's source** — the
+model didn't generate it, it recited it. Real FastAPI types
+(`APIRoute`, `JSONResponse`, `Default`, `Doc`, `Annotated`), real
+`Annotated[..., Doc("""...""")]` pattern (FastAPI's actual docstring
+convention). But also: `ge: float | None = None` repeated 3×,
+`include_in_schema` repeated, `strict: bool | None` twice — the model's
+parameter list keeps cycling because it learned the *shape* of a Field
+without learning that each parameter should be distinct.
+
+**TypeScript (`--prompt "function "` — memorizes microsoft/TypeScript):**
+
+```typescript
+function hasNonSameName(node: Node | Node) {
+        if (node.kind === SyntaxKind.SourceFile || node.kind === SyntaxKind.SourceFile) {
+            const compilerOptions = resolver.getEmitResolver();
+            const compilerOptions = resolver.useSourceFiles!;
+            ...
+            if (emitFlags & EmitFlags.Ignormalizedlags & EmitFlags.CustomTransform) {
+                emitDecoratorsAndEmitHelpersAndEmitHelpersAndDisposeInternalEmitHelpers = [classDecorator, classDecorator, classDecorator, classDecorator, In) {
+                emitDecoratorsAndDisposableFunctionsOrAssignedName(node, classDecl, InternalName.PrivateFieldInitializers);
+                checkExternalEmitHelpers(node, ExternalEmitHelpers.LoadingFactory.createPropertyAssignment("_classPrivateFieldDecorate"));
+                ...
+                if (classInfo.classExtraInitializers) {
+                    emitHelpers.push(createRunMethodExtraInitializer(classInfo.classMethodExtraInitializers));
+                    emitHelpers.
+```
+
+Real TS-compiler internals (`SyntaxKind.SourceFile`,
+`resolver.getEmitResolver`, `EmitFlags`,
+`ExternalEmitHelpers.LoadingFactory.createPropertyAssignment`,
+`classInfo.classExtraInitializers`). The naming convention
+(`emitDecoratorsAndDisposableFunctionsOrAssignedName`,
+`createRunMethodExtraInitializer`) is exactly the
+verb-noun-with-helper-suffix pattern microsoft/TypeScript uses
+internally. Overfitting tells: `Node | Node`, two identical `if`
+branches, `classDecorator` × 4, `emitHelpersHelpersHelpersHelpers`,
+truncated mid-statement at the end.
+
+#### What the samples tell us about the corpus mix
+
+- **Python sample is FastAPI-flavored** because FastAPI is ~5 MB of the
+  corpus and the most distinctive Python idiom (real type hints +
+  `Annotated[..., Doc()]` decorators).
+- **TS sample is microsoft/TypeScript-flavored** because that one
+  source is ~50 MB — over half the entire corpus.
+- **Owner code (~1.2 MB after the prep-corpus exclude fix in PR #13)
+  is invisible** in the samples. With owner code at 2 % of the corpus,
+  that's expected. To get owner-flavored output, we'd need to weight
+  the owner slice higher or train on owner-only (per the M4 ablation
+  in the 2026-06-22 entry, but with this larger model + BPE).
+
+This is exactly the "garbage in → garbage out" lesson from the
+2026-06-22 entry, restated at higher capacity: **the model is a mirror
+of its training data's proportions, not its quality**. microsoft/TypeScript
+dominates because it's biggest, not because it's most representative
+of what we'd want to review.
+
+#### Compared to the char-level run from the 2026-06-22 entry
+
+| | char-level baseline | **baby-GPT** |
+| --- | --- | --- |
+| Params | 920 k | **13.88 M** (~15×) |
+| Tokens / batch | 32 × 128 = 4 096 chars | 32 × 256 = 8 192 BPE tokens (~40 k chars at 5× compression) |
+| Effective context | ~128 bytes | **~1 280 bytes** (10× more code per training example) |
+| Sample quality | English-y gibberish that *looked* like code | Actual code that *looks plausible until you read it* |
+| Generalization | val < train (under-fit) | **val ≫ train** (over-fit, memorizing) |
+
+The qualitative jump from "looks like code" to "is plausibly-valid code"
+is the headline ADR-016 promised. The over-fit is the **same lesson**
+as the char-level run, just amplified by capacity.
+
+#### Verdict
+
+**PASS** for M6 done-means:
+- Completed run with loss curves ✓
+- Samples saved ✓ (above)
+- Headline numbers (wall time, throughput, param count) recorded ✓
+- BPE wired into training via `tokenizer.type = "bpe"` config knob ✓
+  (PR #16) and trains inline per ADR-016 — works exactly as designed
+- M5 char-vs-BPE compression lesson is now visible in real samples:
+  same model architecture, BPE encoding gives qualitatively different
+  output
+
+**This is also the formal "main learning artifact" of Phase 1.** The
+disposable from-scratch model is now durably recorded. With M3 closed
+earlier in this session and M6 closed here, **only M8 baseline scoring
+remains for Phase 1 to fully close.**
+
+---
+
 ### 2026-06-28 — Phase 1 char-level: CPU vs CUDA on the RTX 5060 Ti (closes M3)
 
 First real CUDA training run after the workhorse rebuild (PR #23 + ADR-021).
