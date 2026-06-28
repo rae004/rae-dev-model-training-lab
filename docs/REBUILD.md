@@ -61,6 +61,33 @@ first means clean cables before the GPU is in the way.
 If BIOS sees the card → close case, screw shut. If not → power down,
 reseat the GPU, recheck the PCIe power cable.
 
+### 1d. BIOS settings — required for 16 GB+ cards on older boards
+
+**Don't skip this step.** Modern GPUs need the BIOS to map their full
+VRAM into the CPU address space, and older boards (i7-8700 era and
+earlier) often ship with this turned *off*. If you skip §1d, the Linux
+driver loads but `nvidia-smi` fails with
+`NVRM: BAR1 is 0M @ 0x0` — the card is invisible to userspace until
+BIOS is fixed.
+
+While still in BIOS (don't reboot back to OS yet), find and set:
+
+1. **Above 4G Decoding** → **Enabled**
+   - Usually under `Advanced` → `PCI Configuration` or
+     `System Agent Configuration`. Sometimes named "Above 4G MMIO"
+     or "Memory Mapped I/O above 4GB".
+2. **CSM (Compatibility Support Module)** → **Disabled**
+   - Usually under `Boot`. CSM forces legacy boot mode that can't
+     allocate large BARs. Linux installers are fine with CSM off.
+3. **Re-Size BAR Support / Resizable BAR** → **Enabled** (if present)
+   - May not exist on every i7-8700 era board; enable it if you see
+     it, skip if you don't.
+
+Save (usually `F10`), reboot, then close the case.
+
+If you've already booted the OS and `nvidia-smi` fails with `BAR1 is
+0M`, this is the fix — reboot into BIOS, set the three above, save.
+
 ---
 
 ## 2. Pop!_OS install
@@ -233,6 +260,13 @@ Expected output shape:
 - the command isn't found.
 
 The CUDA Version determines which PyTorch wheel index to use in §6.
+
+**If `nvidia-smi` reports** `NVIDIA-SMI has failed because it couldn't
+communicate with the NVIDIA driver` and `dmesg` shows `NVRM: BAR1 is
+0M @ 0x0` → BIOS isn't mapping VRAM. Reboot into BIOS and follow
+§1d (Above 4G Decoding, CSM off, Resizable BAR on). This is by far
+the most common reason `nvidia-smi` fails on older boards with newer
+GPUs.
 
 ---
 
