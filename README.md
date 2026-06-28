@@ -4,12 +4,25 @@ A small, self-hosted language model that reviews Python and TypeScript diffs —
 built primarily as a hands-on project to understand how such models are created
 and evaluated, with a genuinely useful local reviewer as the payoff.
 
-> **Status:** Phase 1 in progress. M1–M4 are merged: package skeleton,
-> deterministic corpus prep, char-level tokenizer, GPT, device-agnostic
-> training loop, and a `sample` subcommand all exist and have test coverage.
-> The `reviewer` CLI shown below is still on the roadmap (M7); the example
-> commands in *Intended usage* describe its *planned* interface, not working
-> code yet. See *Development* further down for what runs today.
+> **Status:** **Phase 1 complete.** All eight milestones (M1–M8) shipped
+> and ran on real hardware. Headline outcomes recorded in
+> [`docs/results.md`](docs/results.md):
+> - A from-scratch BPE-encoded ~14 M-param GPT trained on the corpus (M6);
+>   samples produce real-looking code memorized from the training set —
+>   the "garbage in / garbage out" lesson made vivid.
+> - A device-agnostic training loop with byte-identical CPU vs CUDA results
+>   and a ~10× speedup on the RTX 5060 Ti (M3).
+> - A working `codereview review` CLI talking to `qwen2.5-coder` via Ollama
+>   on the workhorse (M7), interactive on the new GPU.
+> - A baseline eval score against the off-the-shelf model that any Phase 2
+>   candidate must beat (M8): 1.000 recall on security, 0.727 verdict
+>   accuracy overall, biased toward false negatives — the clearest
+>   Phase 2 fine-tuning target.
+>
+> **Phase 2 is next:** QLoRA fine-tune of a small pretrained code model
+> into the real reviewer, per ADR-001 / ADR-003 / ADR-017. The deferred
+> taxonomy + scoring decisions come back to the table now, informed by
+> the M8 baseline numbers.
 
 ## What it is
 
@@ -42,14 +55,14 @@ The full diagrams — the two-plane build/serve architecture, the review
 lifecycle, the output schema, and the model-promotion flow — live in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-## Intended usage
+## Usage
 
 ```bash
-# Review staged changes (planned)
-git diff --staged | reviewer
+# Review staged changes — talks to qwen2.5-coder via Ollama on workhorse
+git diff --staged | uv run python -m codereview review --config configs/review.toml
 
 # Machine-readable output for tooling / the eval harness
-git diff --staged | reviewer --json
+git diff --staged | uv run python -m codereview review --config configs/review.toml --json
 ```
 
 A review returns structured **findings** (each with a severity, category,
@@ -75,22 +88,25 @@ uv run python -m codereview sample --checkpoint runs/smoke/ckpt.pt \
     --prompt "def " --max-new-tokens 100 --seed 42
 ```
 
-Phase 1 (the from-scratch model) trains on CPU on `rae-dev-command`, with a
-parallel CUDA track on `rae-dev-workhorse`'s GTX 1050; Phase 2 fine-tuning runs
-on a rented GPU. The three-machine split and the reasoning behind it are in the
-architecture doc.
+Phase 1 (the from-scratch model) ran on CPU on `rae-dev-command` and on CUDA
+on `rae-dev-workhorse`'s RTX 5060 Ti (Blackwell, swapped in per ADR-021);
+Phase 2 fine-tuning runs on a rented GPU. The three-machine split and the
+reasoning behind it are in the architecture doc.
 
 ## Roadmap
 
-- **Phase 1** — the from-scratch track, in two steps: a char-level ~1–3M-param
-  model to prove the device-agnostic training loop on both CPU and CUDA, then a
-  small-BPE ~10M "baby GPT" as the main learning run (doubling as a CPU-vs-GPU
-  benchmark). Alongside it: the `review()` core and CLI, and the evaluation
-  harness. The model itself is a disposable teaching artifact, not the eventual
-  reviewer.
-- **Phase 2** — QLoRA fine-tune of a small pretrained code model on a rented GPU
-  (container smoke-tested locally first), export to GGUF, and serve via Ollama on
-  `rae-dev-workhorse`.
+- **Phase 1 — done.** From-scratch track in two steps: a char-level
+  ~1 M-param model proving the device-agnostic training loop on both CPU and
+  CUDA, then a small-BPE ~14 M-param "baby GPT" as the main learning run.
+  Alongside it: the `review()` core + CLI talking to `qwen2.5-coder` via Ollama,
+  and the eval harness with the baseline score. The from-scratch model is a
+  disposable teaching artifact — not the eventual reviewer. Outcomes in
+  [`docs/results.md`](docs/results.md).
+- **Phase 2 — next.** QLoRA fine-tune of a small pretrained code model on
+  a rented GPU (container smoke-tested locally first), export to GGUF, and
+  serve via Ollama on `rae-dev-workhorse`. The deferred ADR-017 items
+  (base model, fine-tuning dataset, final taxonomy, scoring methodology)
+  come back to the table now, informed by Phase 1's measured baseline.
 
 ## Documentation
 
@@ -107,6 +123,10 @@ architecture doc.
   drivers → cu128 venv → first CUDA run.
 - [`docs/tokenizer-comparison.md`](docs/tokenizer-comparison.md) — char vs. BPE
   compression measured on the Phase 1 corpus (the M5 lesson).
+- [`docs/results.md`](docs/results.md) — reverse-chronological training results.
+  All Phase 1 runs are here (char-level CPU/CUDA, baby-GPT BPE, M8 baseline).
+- [`docs/baseline-eval.md`](docs/baseline-eval.md) — the M8 score that any
+  Phase 2 candidate must beat (raw harness output).
 - [`docs/DECISIONS.md`](docs/DECISIONS.md) — design decisions log (ADRs).
 - [`CLAUDE.md`](CLAUDE.md) — operational guide for coding agents; implementation
   is agent-assisted with human review of every diff.
