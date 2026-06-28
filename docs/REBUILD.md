@@ -225,6 +225,22 @@ that uses `sudo` needs `-t`:
 ssh -t workhorse sudo apt install -y system76-driver-nvidia
 ```
 
+### 3f. **[cmd]** Disable auto-suspend on workhorse
+
+Pop!_OS desktop session auto-suspends on idle. Since workhorse runs
+headless (no keyboard/mouse on the machine itself), the desktop
+treats every minute as "idle" and the box puts itself to sleep —
+SSH dies, network dies, you have to physically poke it to wake.
+
+Mask the systemd sleep targets so suspend can't fire regardless of
+desktop power settings:
+
+```bash
+ssh workhorse 'sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target'
+ssh workhorse 'systemctl status sleep.target | head -3'
+# → Loaded: masked
+```
+
 ---
 
 ## 4. NVIDIA driver
