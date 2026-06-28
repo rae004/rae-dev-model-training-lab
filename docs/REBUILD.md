@@ -232,14 +232,32 @@ headless (no keyboard/mouse on the machine itself), the desktop
 treats every minute as "idle" and the box puts itself to sleep —
 SSH dies, network dies, you have to physically poke it to wake.
 
-Mask the systemd sleep targets so suspend can't fire regardless of
-desktop power settings:
+Two layers of fix needed; do both.
+
+**1. Mask the systemd sleep targets** so even if something tries to
+suspend, the operation fails:
 
 ```bash
 ssh workhorse 'sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target'
 ssh workhorse 'systemctl status sleep.target | head -3'
 # → Loaded: masked
 ```
+
+**2. Tell `systemd-logind` not to even try.** Without this, logind
+fires the "The system will suspend now!" broadcast every idle period
+(the mask blocks the actual suspend, but the *attempt* is annoying):
+
+```bash
+ssh workhorse 'sudo mkdir -p /etc/systemd/logind.conf.d && printf "[Login]\nIdleAction=ignore\n" | sudo tee /etc/systemd/logind.conf.d/no-suspend.conf'
+ssh workhorse 'sudo systemctl restart systemd-logind'
+ssh workhorse 'cat /etc/systemd/logind.conf.d/no-suspend.conf'
+# → [Login]
+# → IdleAction=ignore
+```
+
+Don't use a heredoc for the conf file content — multi-line shell
+paste can mangle indentation and break the `EOF` terminator.
+`printf` is paste-safe.
 
 ---
 
