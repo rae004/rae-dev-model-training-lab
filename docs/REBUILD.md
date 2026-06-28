@@ -427,11 +427,13 @@ else copied over. Finishes in seconds.
 `data/corpus.txt` is git-ignored (ADR-018: corpus is regenerable, not
 committed). The corpus only exists on `command` where you built it
 via `prep_corpus.py`. For the real char-level run on workhorse, rsync
-it across per ADR-015's artifact-handoff pattern:
+it across per ADR-015's artifact-handoff pattern. **Use the absolute
+path** so the command works regardless of your current shell directory:
 
 ```bash
 # [cmd]
-rsync -av --progress data/corpus.txt workhorse:~/projects/rae-dev-model-training-lab/data/
+rsync -av --progress ~/projects/rae-dev-model-training-lab/data/corpus.txt \
+    workhorse:~/projects/rae-dev-model-training-lab/data/
 # ~5 sec on LAN; 54 MB
 ```
 
