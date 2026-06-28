@@ -115,18 +115,20 @@ getent hosts workhorse
 
 ### 3c. **[cmd]** Install the public key on workhorse
 
-The fresh install has no `authorized_keys`. First attempt prompts for
-the password you set during install:
+The fresh install has no `authorized_keys`. **Use the IP directly here,
+not `workhorse`**, in case your `~/.ssh/config` has a stale `HostName`
+override (e.g. `rae-dev-workhorse.local` from the pre-rebuild install,
+which won't resolve on the new install):
 
 ```bash
-ssh-copy-id wh@workhorse
+ssh-copy-id wh@<WH_IP>        # the IP from step 3a, e.g. wh@192.168.68.65
 # → password prompt — enter the wh user's password
 ```
 
-Verify SSH works without a password:
+Verify it works without a password:
 
 ```bash
-ssh wh@workhorse hostname
+ssh wh@<WH_IP> hostname
 # → rae-dev-workhorse
 ```
 
@@ -138,6 +140,62 @@ any password prompt, Pop!_OS shipped sshd with password auth off:
 sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
 sudo systemctl restart ssh
 # Then retry ssh-copy-id from command.
+```
+
+### 3d. **[cmd]** Fix `~/.ssh/config` so the short name works
+
+If you have a `Host workhorse` block in `~/.ssh/config` from before
+the rebuild, it probably overrides the hostname to something that no
+longer resolves (e.g. `rae-dev-workhorse.local`). Update it so SSH
+honors `/etc/hosts`:
+
+```bash
+nano ~/.ssh/config
+```
+
+Make the `workhorse` block look like:
+
+```
+Host workhorse
+    HostName workhorse
+    User wh
+```
+
+(Or remove the `HostName` line entirely — same effect.)
+
+Verify:
+
+```bash
+ssh workhorse hostname
+# → rae-dev-workhorse
+```
+
+From this point on every `ssh workhorse ...` in the playbook works.
+
+### 3e. **[cmd]** Passwordless sudo on workhorse (one-time)
+
+`ssh workhorse sudo ...` requires either a TTY (`ssh -t`) or an
+askpass helper, and prompts for a password every time. Saving you 20
+password prompts during the rebuild — set up passwordless sudo for
+`wh` once:
+
+```bash
+ssh -t workhorse 'sudo bash -c "echo \"wh ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/wh-nopasswd && chmod 440 /etc/sudoers.d/wh-nopasswd"'
+# → password prompt (last one)
+```
+
+Verify:
+
+```bash
+ssh workhorse sudo whoami
+# → root      (no password prompt)
+```
+
+If you'd rather not enable passwordless sudo, every command in §4–7
+that uses `sudo` needs `-t`:
+
+```bash
+ssh -t workhorse sudo apt install -y system76-driver-nvidia
 ```
 
 ---
