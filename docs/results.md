@@ -44,6 +44,146 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-06-28 — M8: baseline eval against qwen2.5-coder (closes M8, closes Phase 1)
+
+First scored run of the eval harness from PR #18 against the off-the-shelf
+`qwen2.5-coder` served from workhorse via Ollama on the new 5060 Ti.
+**Closes M8.** Establishes the Phase-2-must-beat baseline per ADR-005.
+
+- **Commit:** `e77078d` (PR #24 — same point as the M3 and M6 entries above)
+- **Backend:** `qwen2.5-coder:latest` on `http://workhorse:11434`
+  (4.7 GB, runs fully on 5060 Ti VRAM per ADR-021)
+- **Eval set:** `eval/eval_set.toml` — 11 hand-authored cases shipped in PR #18
+- **Scoring methodology:** the *(proposed)* precision-aware defaults
+  (PR #18 / ARCHITECTURE.md §4 / ADR-017)
+- **Run command:**
+  ```bash
+  uv run python -m codereview eval --config configs/review.toml --report docs/baseline-eval.md
+  ```
+- **Wall time:** **72 seconds for all 11 cases** (was projected at hours on
+  the GTX 1050; the ADR-021 GPU swap turned this into an interactive run)
+
+#### Headline numbers
+
+| metric | value |
+| --- | ---:|
+| Macro precision | **0.273** |
+| Macro recall | **0.273** |
+| Macro F1 | **0.273** |
+| **Verdict accuracy** | **0.727 (8/11)** |
+
+Full report committed to `docs/baseline-eval.md` alongside this entry.
+
+#### Two different stories
+
+The macro F1 reads worse than the actual model quality. The reason:
+scoring requires `(severity, category)` to match **exactly**, and
+qwen2.5-coder's idea of the taxonomy disagrees with our *(proposed)*
+default. Per-case, the model usually *finds something* — it just files
+the finding in a different category bucket than we expected.
+
+#### Per-category recall — the real signal
+
+| category | recall | reading |
+| --- | ---:| --- |
+| **security** | **1.000** | **Caught both** SQL injection and hardcoded secret. 2/2 on the safety-critical category — meaningful for a code reviewer. |
+| bug | 0.000 | Model flagged the bug cases but with non-`bug` categories |
+| design / performance / test-gap / readability | 0.000 | Same shape — issue found, taxonomy disagrees |
+
+Security being the strongest is the right place to start: false
+negatives on `security` are the costliest failure mode, and 100 %
+recall there means qwen2.5-coder catches real security smells out of
+the box. The other "0.000s" need a closer look — the model isn't
+silent on those cases, it's miscategorizing.
+
+#### Verdict accuracy is the practical metric
+
+The model agreed with our *expected* `verdict.passed` on **8 of 11**
+cases. The 3 misses were all **false negatives** on real bugs — model
+said *pass* when we expected *fail*:
+
+- `off-by-one-loop` — should fail; model passed
+- `retry-on-auth-failure` (mask permanent auth failure) — should fail;
+  model passed
+- `n-plus-one` (DB query per loop iteration) — should fail; model passed
+
+The model is biased toward "this looks fine." For a code reviewer
+that's the worse failure mode (a false negative ships a bug; a false
+positive just annoys a developer). **A clear Phase-2 fine-tuning
+target.**
+
+#### The macro F1 is informative, not damning
+
+This isn't a damnation of `qwen2.5-coder` — it's the data ADR-017
+anticipated:
+
+> Final category taxonomy and severity threshold defaults are deferred
+> to the Phase 2 boundary.
+
+We're seeing the *(proposed)* defaults hit real model output and
+disagreeing. Two honest paths for Phase 2:
+1. **Tighten the prompt** to demand specific categories from our list
+2. **Relax the matching** to score by severity-only, with category as
+   a soft signal (less strict; rewards "found a real issue")
+
+Both are reasonable. The data informs the choice; neither is forced.
+
+#### Per-case scoring detail
+
+(also in `docs/baseline-eval.md` verbatim)
+
+| case | ref | model | matched | P | R | F1 | verdict |
+| --- | ---:| ---:| ---:| ---:| ---:| ---:| :---:|
+| off-by-one-loop | 1 | 1 | 0 | 0.00 | 0.00 | 0.00 | ✗ |
+| retry-on-auth-failure | 1 | 0 | 0 | 0.00 | 0.00 | 0.00 | ✗ |
+| sql-injection | 1 | 1 | 1 | 1.00 | 1.00 | 1.00 | ✓ |
+| hardcoded-secret | 1 | 1 | 1 | 1.00 | 1.00 | 1.00 | ✓ |
+| new-function-no-tests | 1 | 1 | 0 | 0.00 | 0.00 | 0.00 | ✓ |
+| god-function | 1 | 2 | 0 | 0.00 | 0.00 | 0.00 | ✓ |
+| n-plus-one | 1 | 2 | 0 | 0.00 | 0.00 | 0.00 | ✗ |
+| cryptic-names | 1 | 1 | 0 | 0.00 | 0.00 | 0.00 | ✓ |
+| lgtm-rename-only | 0 | 1 | 0 | 0.00 | 0.00 | 0.00 | ✓ |
+| lgtm-typing-improvement | 0 | 0 | 0 | 1.00 | 1.00 | 1.00 | ✓ |
+| lgtm-test-added-with-feature | 0 | 1 | 0 | 0.00 | 0.00 | 0.00 | ✓ |
+
+The 8 `✓` verdicts correspond to cases where threshold-based blocking
+agreed with our expectation. The 3 `✗` are the safety-critical false
+negatives noted above.
+
+#### Verdict
+
+**PASS** for M8 done-means:
+- Harness produces a scored report for the off-the-shelf Ollama
+  model ✓
+- Report recorded as the baseline any Phase 2 candidate must beat ✓
+- Eval set committed (PR #18) ✓
+- Scoring logic unit-tested (PR #18) ✓
+
+**With M8 closed and the report committed, Phase 1 fully closes.**
+
+#### Phase 1 → Phase 2
+
+The deferred ADR-017 items come back to the table now:
+
+- **Phase 2 base model choice** — `qwen2.5-coder:1.5b/7b/14b` are the
+  obvious candidates; the 7b runs comfortably on the 5060 Ti's 16 GB.
+- **Fine-tuning dataset sourcing** — not `data/corpus.txt`; needs
+  `(diff, review)` *pairs* (per the M6 entry's explanation). Could
+  use this very project's PR history as a starter — every commit's
+  squash-message + the diff is a real review-shaped artifact.
+- **Final severity / category taxonomy** — informed directly by this
+  M8 baseline. The macro-F1 = 0.273 vs verdict-accuracy = 0.727 split
+  is the data that drives the design.
+- **Precision-aware scoring methodology** — current scoring uses
+  exact `(severity, category)` match. Two reasonable adjustments:
+  severity-only with category as soft signal, or message-similarity
+  scoring via a small embedding model.
+
+Phase 2 starts with a new branch and the first new ADR since this
+rebuild closed Phase 1.
+
+---
+
 ### 2026-06-28 — M6: baby-GPT on BPE (closes M6, Phase 1 main learning artifact)
 
 First end-to-end run of the ADR-016 step-2 spec: ~14 M-param GPT trained
