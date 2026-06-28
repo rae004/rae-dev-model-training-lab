@@ -61,6 +61,33 @@ first means clean cables before the GPU is in the way.
 If BIOS sees the card → close case, screw shut. If not → power down,
 reseat the GPU, recheck the PCIe power cable.
 
+### 1d. BIOS settings — required for 16 GB+ cards on older boards
+
+**Don't skip this step.** Modern GPUs need the BIOS to map their full
+VRAM into the CPU address space, and older boards (i7-8700 era and
+earlier) often ship with this turned *off*. If you skip §1d, the Linux
+driver loads but `nvidia-smi` fails with
+`NVRM: BAR1 is 0M @ 0x0` — the card is invisible to userspace until
+BIOS is fixed.
+
+While still in BIOS (don't reboot back to OS yet), find and set:
+
+1. **Above 4G Decoding** → **Enabled**
+   - Usually under `Advanced` → `PCI Configuration` or
+     `System Agent Configuration`. Sometimes named "Above 4G MMIO"
+     or "Memory Mapped I/O above 4GB".
+2. **CSM (Compatibility Support Module)** → **Disabled**
+   - Usually under `Boot`. CSM forces legacy boot mode that can't
+     allocate large BARs. Linux installers are fine with CSM off.
+3. **Re-Size BAR Support / Resizable BAR** → **Enabled** (if present)
+   - May not exist on every i7-8700 era board; enable it if you see
+     it, skip if you don't.
+
+Save (usually `F10`), reboot, then close the case.
+
+If you've already booted the OS and `nvidia-smi` fails with `BAR1 is
+0M`, this is the fix — reboot into BIOS, set the three above, save.
+
 ---
 
 ## 2. Pop!_OS install
@@ -115,18 +142,20 @@ getent hosts workhorse
 
 ### 3c. **[cmd]** Install the public key on workhorse
 
-The fresh install has no `authorized_keys`. First attempt prompts for
-the password you set during install:
+The fresh install has no `authorized_keys`. **Use the IP directly here,
+not `workhorse`**, in case your `~/.ssh/config` has a stale `HostName`
+override (e.g. `rae-dev-workhorse.local` from the pre-rebuild install,
+which won't resolve on the new install):
 
 ```bash
-ssh-copy-id wh@workhorse
+ssh-copy-id wh@<WH_IP>        # the IP from step 3a, e.g. wh@192.168.68.65
 # → password prompt — enter the wh user's password
 ```
 
-Verify SSH works without a password:
+Verify it works without a password:
 
 ```bash
-ssh wh@workhorse hostname
+ssh wh@<WH_IP> hostname
 # → rae-dev-workhorse
 ```
 
@@ -139,6 +168,96 @@ sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh
 sudo systemctl restart ssh
 # Then retry ssh-copy-id from command.
 ```
+
+### 3d. **[cmd]** Fix `~/.ssh/config` so the short name works
+
+If you have a `Host workhorse` block in `~/.ssh/config` from before
+the rebuild, it probably overrides the hostname to something that no
+longer resolves (e.g. `rae-dev-workhorse.local`). Update it so SSH
+honors `/etc/hosts`:
+
+```bash
+nano ~/.ssh/config
+```
+
+Make the `workhorse` block look like:
+
+```
+Host workhorse
+    HostName workhorse
+    User wh
+```
+
+(Or remove the `HostName` line entirely — same effect.)
+
+Verify:
+
+```bash
+ssh workhorse hostname
+# → rae-dev-workhorse
+```
+
+From this point on every `ssh workhorse ...` in the playbook works.
+
+### 3e. **[cmd]** Passwordless sudo on workhorse (one-time)
+
+`ssh workhorse sudo ...` requires either a TTY (`ssh -t`) or an
+askpass helper, and prompts for a password every time. Saving you 20
+password prompts during the rebuild — set up passwordless sudo for
+`wh` once:
+
+```bash
+ssh -t workhorse 'sudo bash -c "echo \"wh ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/wh-nopasswd && chmod 440 /etc/sudoers.d/wh-nopasswd"'
+# → password prompt (last one)
+```
+
+Verify:
+
+```bash
+ssh workhorse sudo whoami
+# → root      (no password prompt)
+```
+
+If you'd rather not enable passwordless sudo, every command in §4–7
+that uses `sudo` needs `-t`:
+
+```bash
+ssh -t workhorse sudo apt install -y system76-driver-nvidia
+```
+
+### 3f. **[cmd]** Disable auto-suspend on workhorse
+
+Pop!_OS desktop session auto-suspends on idle. Since workhorse runs
+headless (no keyboard/mouse on the machine itself), the desktop
+treats every minute as "idle" and the box puts itself to sleep —
+SSH dies, network dies, you have to physically poke it to wake.
+
+Two layers of fix needed; do both.
+
+**1. Mask the systemd sleep targets** so even if something tries to
+suspend, the operation fails:
+
+```bash
+ssh workhorse 'sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target'
+ssh workhorse 'systemctl status sleep.target | head -3'
+# → Loaded: masked
+```
+
+**2. Tell `systemd-logind` not to even try.** Without this, logind
+fires the "The system will suspend now!" broadcast every idle period
+(the mask blocks the actual suspend, but the *attempt* is annoying):
+
+```bash
+ssh workhorse 'sudo mkdir -p /etc/systemd/logind.conf.d && printf "[Login]\nIdleAction=ignore\n" | sudo tee /etc/systemd/logind.conf.d/no-suspend.conf'
+ssh workhorse 'sudo systemctl restart systemd-logind'
+ssh workhorse 'cat /etc/systemd/logind.conf.d/no-suspend.conf'
+# → [Login]
+# → IdleAction=ignore
+```
+
+Don't use a heredoc for the conf file content — multi-line shell
+paste can mangle indentation and break the `EOF` terminator.
+`printf` is paste-safe.
 
 ---
 
@@ -175,6 +294,13 @@ Expected output shape:
 - the command isn't found.
 
 The CUDA Version determines which PyTorch wheel index to use in §6.
+
+**If `nvidia-smi` reports** `NVIDIA-SMI has failed because it couldn't
+communicate with the NVIDIA driver` and `dmesg` shows `NVRM: BAR1 is
+0M @ 0x0` → BIOS isn't mapping VRAM. Reboot into BIOS and follow
+§1d (Above 4G Decoding, CSM off, Resizable BAR on). This is by far
+the most common reason `nvidia-smi` fails on older boards with newer
+GPUs.
 
 ---
 
@@ -281,7 +407,9 @@ When all four return what's expected, workhorse is ready.
 
 ## 9. Close M3's `--device cuda` clause
 
-The last unmet M3 done-means. Smoke first:
+The last unmet M3 done-means.
+
+### 9a. Smoke first (uses committed sample data, no corpus needed)
 
 ```bash
 ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
@@ -290,7 +418,30 @@ ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
 # → expect "device=cuda", decreasing loss, "training done"
 ```
 
-Then the real char-level run:
+The smoke uses `data/sample/sample.py` + `data/sample/sample.ts` which
+*are* committed, so this works on a brand-new workhorse with nothing
+else copied over. Finishes in seconds.
+
+### 9b. Copy the corpus from command (ADR-015)
+
+`data/corpus.txt` is git-ignored (ADR-018: corpus is regenerable, not
+committed). The corpus only exists on `command` where you built it
+via `prep_corpus.py`. For the real char-level run on workhorse, rsync
+it across per ADR-015's artifact-handoff pattern. **Use the absolute
+path** so the command works regardless of your current shell directory:
+
+```bash
+# [cmd]
+rsync -av --progress ~/projects/rae-dev-model-training-lab/data/corpus.txt \
+    workhorse:~/projects/rae-dev-model-training-lab/data/
+# ~5 sec on LAN; 54 MB
+```
+
+Alternative: regenerate on workhorse by running `prep_corpus.py`
+there (re-clones the public sources, takes ~30 sec). rsync is the
+documented path.
+
+### 9c. The real char-level run
 
 ```bash
 ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
@@ -298,11 +449,17 @@ ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
     python -m codereview train --config configs/char_step1.toml --device cuda'
 ```
 
-Wall time + final loss go into a new `docs/results.md` entry.
+PR #14's CPU baseline on this same config was ~11 min on command
+(24-thread Ryzen 9 9900X). On the 5060 Ti, expect a small fraction of
+that. The wall time + final loss go into a new `docs/results.md`
+entry comparing CPU vs CUDA.
 
 ---
 
 ## 10. M6: baby-GPT on BPE
+
+Needs `data/corpus.txt` on workhorse — already in place if you did §9b,
+otherwise rsync it now.
 
 ```bash
 ssh workhorse 'cd ~/projects/rae-dev-model-training-lab && \
