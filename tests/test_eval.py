@@ -334,6 +334,72 @@ def test_run_eval_aggregates_across_cases() -> None:
     assert rep.verdict_accuracy == pytest.approx(0.5)
 
 
+def test_run_eval_records_case_errors_instead_of_bailing() -> None:
+    """Per-case failures (unparseable model output, backend down, etc.)
+    must record the error on the CaseScore and continue, not abort the
+    whole eval. This was originally uncovered running StarCoder2 base
+    against the M8 harness — the raw model doesn't reliably emit JSON,
+    and the harness previously bailed on the first parse failure."""
+    from codereview.review import Category
+
+    cases = [
+        EvalCase(name="ok", description="", diff="x",
+                 reference_findings=[], expected_verdict_passed=True),
+        EvalCase(name="broken", description="", diff="y",
+                 reference_findings=[_ref(Severity.ERROR, Category.BUG)],
+                 expected_verdict_passed=False),
+        EvalCase(name="also-ok", description="", diff="z",
+                 reference_findings=[], expected_verdict_passed=True),
+    ]
+
+    def flaky_review(diff: str, cfg: ReviewConfig) -> Review:
+        if diff == "y":
+            raise ValueError("no JSON object found in model output")
+        return _review([])
+
+    cfg = ReviewConfig()
+    rep = run_eval(cases, cfg, review_fn=flaky_review)
+
+    # All three cases scored, not just the first one that succeeded.
+    assert len(rep.cases) == 3
+
+    # The broken case has the error recorded and scores as complete miss.
+    broken = next(s for s in rep.cases if s.case_name == "broken")
+    assert broken.error is not None
+    assert "no JSON object" in broken.error
+    assert broken.n_model == 0
+    assert broken.precision == 0.0
+    assert broken.recall == 0.0
+    assert broken.verdict_correct is False
+    # The reference-by-category counts are still populated so category
+    # recall aggregation stays honest (bug category had 1 ref, 0 matched).
+    assert broken.reference_by_category[Category.BUG] == 1
+
+    # The successful cases still scored normally.
+    ok = next(s for s in rep.cases if s.case_name == "ok")
+    assert ok.error is None
+    assert ok.verdict_correct is True
+
+
+def test_render_report_shows_ERR_for_errored_cases() -> None:
+    """Errored cases must render as ERR in the verdict column, not just ✗,
+    and the report must include an appendix listing the errors."""
+    from codereview.eval import CaseScore, aggregate
+
+    ok = CaseScore(case_name="ok", n_reference=0, n_model=0, n_matched=0,
+                   precision=1.0, recall=1.0, f1=1.0, verdict_correct=True)
+    errored = CaseScore(case_name="broken", n_reference=1, n_model=0, n_matched=0,
+                        precision=0.0, recall=0.0, f1=0.0, verdict_correct=False,
+                        error="no JSON object found in model output")
+    rep = aggregate([ok, errored])
+    text = render_report(rep)
+
+    assert "| broken |" in text
+    assert "| ERR |" in text
+    assert "## Errored cases" in text
+    assert "no JSON object found in model output" in text
+
+
 # ---------------------------------------------------------------------------
 # Eval set loading + the committed eval set
 # ---------------------------------------------------------------------------
