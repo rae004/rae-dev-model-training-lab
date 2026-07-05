@@ -1,0 +1,20 @@
+# Review configuration — starcoder2:15b-instruct variant for the ADR-022
+# trust-anchor cross-check, part 2 (proper apples-to-apples).
+#
+# The base starcoder2:7b run couldn't participate in the JSON-schema eval
+# (see docs/results.md 2026-07-04 entry). BigCode released StarCoder2-Instruct
+# only at the 15B size (starcoder2-15b-instruct-v0.1 on Hugging Face), so this
+# variant is 15B, not 7B — a size mismatch vs. the qwen2.5-coder:7b baseline.
+# The results.md entry documents that trade explicitly.
+#
+# ~10 GB in q4 quantization; fits comfortably in the 5060 Ti's 16 GB VRAM
+# per ADR-021 but slower per-case than the 7B models.
+
+threshold = "error"
+
+[backend]
+type        = "ollama"
+base_url    = "http://workhorse:11434"
+model       = "starcoder2:15b-instruct"
+timeout     = 550.0
+temperature = 0.2

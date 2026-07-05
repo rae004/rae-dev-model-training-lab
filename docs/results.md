@@ -44,6 +44,157 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-07-05 — ADR-022 cross-check, part 2: starcoder2:15b-instruct
+
+Follow-up to the 2026-07-04 base-model run. That run showed StarCoder2's
+base model can't participate in a JSON-schema eval — the whole 11-case
+run errored. The proper cross-vendor comparison ADR-022 was after
+requires an instruction-tuned StarCoder2. BigCode released StarCoder2-
+Instruct only at the 15B size (`starcoder2-15b-instruct-v0.1` on
+Hugging Face), which Ollama exposes as `starcoder2:15b-instruct`.
+
+This entry captures the resulting three-way comparison:
+qwen2.5-coder:7b (M8 baseline), starcoder2:15b-instruct, and the
+starcoder2:7b base (2026-07-04 entry) side by side.
+
+- **Commit:** `394c147` (main HEAD at the time of the run) plus
+  `fcfd4b3` (the harness fix from the base run — still load-bearing:
+  one case still errors on malformed JSON)
+- **Backend:** `starcoder2:15b-instruct` on `http://workhorse:11434`
+  via Ollama (~10 GB q4, runs on the 5060 Ti per ADR-021)
+- **Eval set:** `eval/eval_set.toml` — same 11 cases
+- **Config:** `configs/review-starcoder2-instruct.toml`
+- **Run command:**
+  ```bash
+  uv run python -m codereview eval --config configs/review-starcoder2-instruct.toml --report docs/starcoder2-instruct-baseline.md
+  ```
+- **Wall time:** 1 min 45 s (slower per case than Qwen 7B despite the
+  15B being on the same GPU — parameter count matters more than the
+  Blackwell speedup within one model)
+
+#### Three-way headline
+
+| metric | qwen2.5-coder:**7b** | starcoder2:**15b**-instruct | starcoder2:7b (base) |
+| --- | ---:| ---:| ---:|
+| Macro precision | **0.273** | 0.136 | 0.000 |
+| Macro recall | **0.273** | 0.182 | 0.000 |
+| Macro F1 | **0.273** | 0.152 | 0.000 |
+| Verdict accuracy | **0.727** (8/11) | 0.545 (6/11) | 0.000 (0/11) |
+| Errored cases | 0/11 | **1/11** | 11/11 |
+
+Full report: `docs/starcoder2-instruct-baseline.md`.
+
+**Qwen wins across the board — despite being half the parameters** (7B
+vs. 15B). More instruct compute didn't overcome different-quality
+instruction tuning + code-focus. ADR-022's Qwen choice is validated.
+
+#### The interesting finding: models have different "review personalities"
+
+Per-category recall reveals fundamentally different behaviors on the
+same eval set:
+
+| category | qwen2.5-coder:7b | starcoder2:15b-instruct |
+| --- | ---:| ---:|
+| **security** | **1.000** | 0.000 |
+| **performance** | 0.000 | **1.000** |
+| bug / design / readability / test-gap | 0.000 | 0.000 |
+
+- **Qwen is a security-focused reviewer.** Caught `sql-injection` and
+  `hardcoded-secret`. Missed everything else.
+- **StarCoder2-Instruct is a performance-focused reviewer.** Caught
+  `n-plus-one` (with real matched finding — P=0.50, R=1.00, F1=0.67
+  on that case). Missed both security cases.
+
+They don't just score differently — they *find different things*.
+
+#### Case-by-case highlights
+
+- `sql-injection` — Qwen caught (found + matched); SC2-I found but
+  miscategorized (P/R = 0/1)
+- `hardcoded-secret` — same shape: Qwen caught; SC2-I flagged but
+  wrong category
+- `n-plus-one` — **Qwen missed entirely**; SC2-I is the only model
+  that produced a matched finding here (`P=0.50, R=1.00, F1=0.67`)
+- `off-by-one-loop` — SC2-I errored on malformed JSON (line 13);
+  Qwen's verdict was wrong on this case too
+- LGTM cases — both models agree on verdict most of the time, though
+  SC2-I over-flags on `lgtm-rename-only` and `lgtm-typing-improvement`
+  (found 2 and 1 non-blocking findings respectively)
+
+#### Bigger picture
+
+1. **Qwen's false-negative bias from M8 is a specific category
+   weakness, not a fundamental problem.** SC2-I catching `n-plus-one`
+   proves the pattern IS learnable from code-only training. This
+   directly informs Phase 2's fine-tuning target: teach Qwen (which
+   is already strong on security + instruction-following) to also
+   catch performance issues Qwen currently misses.
+
+2. **Our proposed taxonomy aligns better with Qwen's natural output
+   than with SC2-I's.** SC2-I found more findings on many cases (3 on
+   `god-function`, 3 on `new-function-no-tests`, 2 on
+   `lgtm-rename-only`), but almost none of them match our
+   (severity, category) key. That's the flip side of the M8 lesson:
+   the eval is measuring "compliance with our proposed defaults"
+   as much as "review capability."
+
+3. **Ensembling would win on this eval.** Neither model alone gets
+   everything, but Qwen ∪ SC2-I covers security + performance.
+   Not a Phase 2 plan (over-engineered for the goal, cost doubles),
+   but an interesting future direction — and an observation worth
+   recording for whoever revisits scoring methodology later.
+
+4. **15B model, only ~1 min 45 s.** The 5060 Ti serves the 15B q4
+   comfortably. The ADR-021 hardware swap keeps paying off — even
+   larger models are practical for eval iteration now.
+
+#### Compared to what we knew after part 1 (the base run)
+
+Part 1 said the intended cross-check was unanswerable because base
+StarCoder2 couldn't take the test — the value was the two unintended
+findings (latent harness bug, and "M8 measures skill + instruction-
+following").
+
+Part 2 turns that around: **the cross-check IS answerable now, and
+the answer is nuanced.** Not "Qwen and StarCoder agree on all cases"
+or "totally disagree" — they agree on the LGTM shape and disagree on
+which non-LGTM categories to catch. That's more useful than either
+extreme would have been.
+
+#### Verdict
+
+**PASS** for the ADR-022 cross-check clause, this time in the way the
+ADR intended:
+
+- Independent-vendor comparison recorded ✓
+- Qwen choice validated by the numbers ✓
+- Specific weakness in Qwen (performance category) identified with a
+  concrete example (`n-plus-one`) that Phase 2 fine-tuning should
+  address ✓
+- Prompt/taxonomy sensitivity confirmed as a real axis worth
+  attention in ADR-017's deferred scoring-methodology decision ✓
+
+#### For Phase 2 planning
+
+Two concrete things this run adds to the deferred-ADR list:
+
+1. **Fine-tuning dataset should over-index on performance-category
+   examples** (n+1 queries, unnecessary allocations, blocking calls
+   in async paths) — the specific weakness Qwen exhibits and
+   StarCoder2-Instruct doesn't. Not a full-corpus rebalancing, just a
+   deliberate skew.
+
+2. **Consider severity-only scoring as an alternative** — the
+   "personality difference" between the two models suggests category
+   labels are less durable across models than severities are.
+   Severity-only would let both models get credit for finding the
+   right severity issue even if the taxonomy bucket differs. Would
+   halve the strictness of the metric but might correlate better
+   with practical usefulness. Not deciding now; adding to the
+   ADR-017 deferred list.
+
+---
+
 ### 2026-07-04 — ADR-022 cross-check: starcoder2:7b vs. the M8 harness
 
 One-time cross-vendor comparison mandated by ADR-022. Ran the M8 eval
