@@ -92,6 +92,10 @@ class CaseScore:
     # Per-category counts (only for the categories that appear in this case)
     matched_by_category: dict[Category, int] = field(default_factory=dict)
     reference_by_category: dict[Category, int] = field(default_factory=dict)
+    # Populated when the review call raised (e.g. model returned unparseable
+    # output). Errored cases score P=R=F1=0 and verdict_correct=False, so they
+    # count against the aggregate the same as a completely wrong review.
+    error: str | None = None
 
 
 def _match_findings(
@@ -240,12 +244,29 @@ def render_report(report: EvalReport) -> str:
     )
     lines.append("| --- | ---:| ---:| ---:| ---:| ---:| ---:| :---:|")
     for s in report.cases:
-        verdict_mark = "✓" if s.verdict_correct else "✗"
+        if s.error is not None:
+            verdict_mark = "ERR"
+        elif s.verdict_correct:
+            verdict_mark = "✓"
+        else:
+            verdict_mark = "✗"
         lines.append(
             f"| {s.case_name} | {s.n_reference} | {s.n_model} | {s.n_matched} | "
             f"{s.precision:.2f} | {s.recall:.2f} | {s.f1:.2f} | {verdict_mark} |"
         )
     lines.append("")
+
+    # If any case errored, list the errors in an appendix — the caller wants
+    # to know whether it's "backend down" (uniform error) or "model won't emit
+    # JSON on hard cases" (varied errors).
+    errored = [s for s in report.cases if s.error is not None]
+    if errored:
+        lines.append("## Errored cases")
+        lines.append("")
+        for s in errored:
+            lines.append(f"- **{s.case_name}**: {s.error}")
+        lines.append("")
+
     return "\n".join(lines)
 
 
@@ -264,10 +285,36 @@ def run_eval(
 
     `review_fn` is injectable for tests so the harness can be exercised
     without a live backend. In production it defaults to `codereview.review.review`.
+
+    Per-case failures (e.g. the model returned unparseable output, or the
+    backend was unreachable) score the case as P=R=F1=0 with verdict_correct
+    =False and record the error message on the CaseScore. This is a genuine
+    signal about the backend model: an off-the-shelf coder that can't produce
+    the requested JSON on 8 of 11 cases isn't a harness bug, it's a real
+    finding. Bailing on the first failure would hide that.
     """
     fn = review_fn if review_fn is not None else review
     case_scores: list[CaseScore] = []
     for case in cases:
-        result = fn(case.diff, review_config)
-        case_scores.append(score_case(case, result))
+        try:
+            result = fn(case.diff, review_config)
+            case_scores.append(score_case(case, result))
+        except Exception as e:
+            case_scores.append(
+                CaseScore(
+                    case_name=case.name,
+                    n_reference=len(case.reference_findings),
+                    n_model=0,
+                    n_matched=0,
+                    precision=0.0,
+                    recall=0.0,
+                    f1=0.0,
+                    verdict_correct=False,
+                    reference_by_category={
+                        cat: sum(1 for f in case.reference_findings if f.category == cat)
+                        for cat in {f.category for f in case.reference_findings}
+                    },
+                    error=str(e),
+                )
+            )
     return aggregate(case_scores)

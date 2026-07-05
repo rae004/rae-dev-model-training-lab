@@ -1,0 +1,21 @@
+# Review configuration — starcoder2:7b variant for the ADR-022 trust-anchor
+# cross-check. Same shape as configs/review.toml, only the backend.model
+# changes. Used once (per ADR-022) to record a cross-vendor comparison in
+# docs/results.md, not for routine reviewer traffic.
+#
+# Rationale for using StarCoder2 as the cross-check:
+# - Different vendor than Qwen (BigCode collaboration vs. Alibaba)
+# - Peer-reviewed training-process paper + fully-documented training data
+#   (The Stack v2), giving the closest thing to an academic "control" in
+#   the open-LLM landscape
+# - Independent enough from Qwen that agreement/disagreement on the eval
+#   set is meaningful signal (per ADR-022)
+
+threshold = "error"
+
+[backend]
+type        = "ollama"
+base_url    = "http://workhorse:11434"
+model       = "starcoder2:7b"
+timeout     = 550.0
+temperature = 0.2
