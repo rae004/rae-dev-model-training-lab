@@ -44,6 +44,121 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-07-04 — ADR-022 cross-check: starcoder2:7b vs. the M8 harness
+
+One-time cross-vendor comparison mandated by ADR-022. Ran the M8 eval
+harness against `starcoder2:7b` (BigCode/HuggingFace/ServiceNow, released
+alongside a peer-reviewed paper documenting training data provenance)
+to test whether an independent, more transparently-trained model agrees
+with the Qwen-based baseline in `docs/baseline-eval.md`.
+
+**The intended comparison isn't the interesting outcome. The two
+unintended findings are.**
+
+- **Commit:** `394c147` (main HEAD at the time of the run) plus
+  `fcfd4b3` (the harness fix this run required — see below)
+- **Backend:** `starcoder2:7b` on `http://workhorse:11434` via Ollama
+  (4.0 GB, runs on the 5060 Ti per ADR-021)
+- **Eval set:** `eval/eval_set.toml` — same 11 cases as the Qwen baseline
+- **Config:** `configs/review-starcoder2.toml` — identical to
+  `configs/review.toml` except `backend.model`
+- **Run command:**
+  ```bash
+  uv run python -m codereview eval --config configs/review-starcoder2.toml --report docs/starcoder2-baseline.md
+  ```
+
+#### Headline numbers
+
+| metric | starcoder2:7b | qwen2.5-coder (M8 baseline) |
+| --- | ---:| ---:|
+| Macro precision | 0.000 | 0.273 |
+| Macro recall | 0.000 | 0.273 |
+| Macro F1 | 0.000 | 0.273 |
+| Verdict accuracy | 0.000 (0/11) | 0.727 (8/11) |
+
+Full report: `docs/starcoder2-baseline.md`.
+
+#### What actually happened
+
+**All 11 cases errored on JSON parsing** — StarCoder2's base model
+never produced a valid `Review`-shaped object. Two error categories:
+
+- **7 cases**: `no JSON object found in model output` — the model
+  didn't produce anything JSON-shaped at all. Almost certainly
+  continued the diff, riffed on it in prose, or emitted code.
+- **4 cases**: `malformed JSON: Expecting property name enclosed in
+  double quotes: line 2 column N` — attempted structured output but
+  got syntax wrong. Column positions vary (1, 2, 3, 5) so the failures
+  are per-response, not systematic.
+
+The intended trust-anchor question (does an independent model agree
+with Qwen's category assignments?) **can't be answered from this
+data**. StarCoder2 base didn't take the test — it failed at the
+format layer before content mattered.
+
+#### The two unintended findings
+
+**1. The harness had a latent bug that the M8-all-Qwen-compliant
+baseline never surfaced.** The original `run_eval` (PR #18) treated
+any single case failure as fatal and bailed with
+`error: eval failed: no JSON object found in model output` on the
+first StarCoder2 attempt. Qwen never triggered this because it always
+returned parseable JSON. Fixed in commit `fcfd4b3` on this same branch:
+per-case exceptions now score the case as P=R=F1=0 with
+`verdict_correct=False` and record the error message; the aggregate
+reflects the failures. Report gains an "Errored cases" appendix. Two
+new tests (mixed-success run, ERR rendering) added.
+
+*This is arguably the more valuable outcome of the cross-check than
+the intended one.* Silent success on Qwen was hiding a bug that would
+have bitten anyone plugging in a less compliant backend.
+
+**2. The M8 baseline is measuring "reviewer skill + structured-output
+compliance", not "reviewer skill" alone.** Qwen2.5-Coder-**Instruct**
+does both; StarCoder2-**base** does neither of the second. That's
+important context for reading the 0.727 verdict accuracy — some
+non-trivial fraction of that number is the instruction-tuning, not
+underlying reviewer capability. Phase 2 fine-tuning gets meaningful
+credit for tightening the instruction-following axis specifically.
+
+#### What this does not say
+
+- **Nothing about StarCoder2's reviewer quality.** The base model
+  isn't instruction-tuned for structured output. Judging it on that
+  test is like judging a code-completion model on chess — wrong tool.
+- **Nothing about whether a StarCoder2-*Instruct* variant would agree
+  with Qwen.** That's the proper apples-to-apples comparison and
+  remains open. Follow-up option: pull `starcoder2:7b-instruct` (or
+  whichever tag Ollama exposes) and re-run the same eval. Would take
+  ~10 min.
+- **Nothing about ADR-022's base-model choice.** ADR-022 chose Qwen
+  for baseline-comparability and instruction-tuned-out-of-the-box,
+  both of which this result reinforces rather than challenges.
+
+#### Verdict
+
+**PASS** for the cross-check clause of ADR-022 in an unexpected way:
+- Ran a cross-vendor comparison on the M8 harness ✓
+- Recorded the result in `docs/results.md` alongside the Qwen
+  baseline ✓ (this entry)
+- Recorded the raw harness output in `docs/starcoder2-baseline.md` ✓
+- **Not** a training target — StarCoder2 base is not viable for the
+  reviewer role, and StarCoder2-Instruct is a future follow-up ✓
+- Surfaced and fixed a latent bug that would have bitten future
+  backends ✓ (bonus)
+
+#### For a future proper cross-check
+
+Pull `starcoder2:7b-instruct` (or the current instruct tag) and
+re-run the eval. If it agrees with Qwen on most cases, that's the
+trust-anchor signal ADR-022 was after. If it disagrees materially,
+that's a signal about our prompt/scoring worth investigating before
+locking Phase 2's fine-tuning design.
+
+Not blocking Phase 2 either way. Recorded as an open follow-up.
+
+---
+
 ### 2026-06-28 — M8: baseline eval against qwen2.5-coder (closes M8, closes Phase 1)
 
 First scored run of the eval harness from PR #18 against the off-the-shelf
