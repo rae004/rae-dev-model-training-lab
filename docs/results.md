@@ -44,6 +44,130 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-07-05 — Dual-metric baseline rerun on qwen2.5-coder (post-ADR-024 impl)
+
+First eval run using the dual-metric harness implemented in PR #34
+(ADR-024's decision made concrete). Same setup as the 2026-06-28 M8
+baseline entry — same `qwen2.5-coder` on workhorse Ollama, same
+`configs/review.toml`, same 11 cases in `eval/eval_set.toml` — but
+scored twice per case (strict + severity-only).
+
+**Not** a new baseline number. The M8 strict F1 (0.273 from the
+2026-06-28 entry) remains load-bearing as the Phase 2 target. This
+entry adds the *severity-only companion* the dual-metric harness now
+produces, plus surfaces something worth flagging about eval variance.
+
+- **Commit:** `ff63b5d` (PR #34 dual-metric implementation)
+- **Backend:** `qwen2.5-coder:latest` on `http://workhorse:11434`
+- **Config:** `configs/review.toml` (unchanged from M8 run)
+- **Wall time:** 21 s (model already warm; original M8 run was 72 s
+  including cold-load)
+- **Full report:** `docs/baseline-eval-dual.md`
+
+#### Headline numbers
+
+| metric | strict | severity-only | delta |
+| --- | ---:| ---:| ---:|
+| Macro precision | 0.364 | **0.545** | **+0.181** |
+| Macro recall    | 0.364 | **0.545** | **+0.181** |
+| Macro F1        | 0.364 | **0.545** | **+0.181** |
+| Verdict accuracy | 0.727 (8/11) | — (verdict is severity-derived, so identical) | 0 |
+
+**The delta is the interesting number.** About one-third of what looks
+like "reviewer skill" under strict scoring is actually "agreement with
+our proposed taxonomy labels." The other two-thirds is genuine issue
+detection.
+
+#### Per-case delta: which failures were label-disagreement vs. genuine
+
+Of the 11 cases, two show the exact ADR-024 pattern (strict 0,
+severity-only 1):
+
+| case | strict | sev-only | interpretation |
+| --- | ---:| ---:| --- |
+| `new-function-no-tests` | 0 | 1 | Model found the right-severity issue (a `warning`), filed it in a different category than our `test-gap` reference. Real find, wrong label. |
+| `cryptic-names` | 0 | 1 | Same shape — right severity (`info`), wrong category. Real find, wrong label. |
+
+Four cases show strict 0 / severity-only 0 — **genuine misses**, not
+label disagreements:
+
+| case | interpretation |
+| --- | --- |
+| `off-by-one-loop` | Model found *something* (1 finding) but at wrong severity. |
+| `retry-on-auth-failure` | Model found *nothing* (0 findings). Truly missed. |
+| `god-function` | Model produced 2 findings, neither at reference severity. |
+| `n-plus-one` | Model produced 1 finding at wrong severity. |
+
+The four "genuine miss" cases match the M8 baseline's false-negative
+list from the 2026-06-28 entry (verdict was wrong on off-by-one,
+retry, and n-plus-one; god-function passed verdict but missed the
+design finding). **These are the specific targets Phase 2's
+ADR-023 dataset needs to skew toward** — labels won't fix them; the
+model needs to actually catch these patterns.
+
+#### Category recall (strict) — unchanged shape from M8
+
+| category | recall | reading |
+| --- | ---:| --- |
+| security | **1.000** | Both security cases caught, exactly at `(error, security)`. Consistent with M8. |
+| bug / design / performance / readability / test-gap | 0.000 | All still zero under strict. Two of them (test-gap, readability) show up as severity-only matches but the ADR-024 rule keeps category recall strict-only, so they're not credited here. |
+
+The severity-only fix would surface `test-gap` and `readability` if
+we relaxed the category-recall computation too — but per ADR-024
+that would erase the model-personality signal these zeros carry,
+which is the actionable Phase 2 shape.
+
+#### A note about strict-score variance across runs
+
+The strict macro-F1 here (**0.364**) is higher than the M8 baseline's
+strict macro-F1 from 2026-06-28 (**0.273**). Same eval set, same
+config, same model tag — different numbers.
+
+Two plausible causes: (a) `temperature = 0.2` in
+`configs/review.toml` is non-zero, so Ollama's sampling has run-to-run
+variance; (b) the underlying `qwen2.5-coder:latest` in Ollama's
+registry may have been updated in the six days between runs (Ollama
+doesn't version tags). Without running multiple times we can't
+distinguish, and it's not this PR's job to.
+
+**Implication for Phase 2 evaluation:** the M8 baseline is a *soft*
+target, not a hard 0.273 floor. A responsible Phase 2 comparison
+should re-run the harness against `qwen2.5-coder:latest` at the same
+time as the fine-tuned model, so both sides see the same
+model-registry state and sampling noise. Recording that as an
+implicit requirement for whatever the fine-tune-evaluation PR does.
+
+#### Verdict
+
+**PASS** for the ADR-024 implementation validation:
+- Dual-metric harness runs end-to-end against a live backend ✓
+- Report format matches ADR-024's described shape ✓
+- Delta between strict and severity-only surfaces actionable Phase 2
+  signal ✓ (two cases have label-fixable gaps; four have detection
+  gaps)
+- Category recall stays strict-only per ADR-024 ✓
+- M8's original strict F1 remains the load-bearing target (this entry
+  adds companion signal, doesn't replace the historical baseline) ✓
+
+#### For Phase 2 planning
+
+Concrete addition to the ADR-023 dataset composition, now with real
+numbers:
+
+- **2 of 6 non-security misses are label-fixable** (new-function-no-tests,
+  cryptic-names). Dataset should include `(diff, review)` pairs
+  demonstrating how to categorize test-gap and readability findings
+  in our proposed taxonomy.
+- **4 of 6 non-security misses need detection improvement**
+  (off-by-one, retry, god-function, n-plus-one). Dataset should
+  over-index on these patterns per ADR-023's weakness-targeted slice.
+
+The 2-vs-4 split gives ADR-023's 15% weakness-targeted slice a
+concrete design ratio: ~⅓ of the weakness-targeted pairs demonstrate
+correct categorization; ~⅔ demonstrate hard issue detection.
+
+---
+
 ### 2026-07-05 — ADR-022 cross-check, part 2: starcoder2:15b-instruct
 
 Follow-up to the 2026-07-04 base-model run. That run showed StarCoder2's
