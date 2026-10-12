@@ -69,59 +69,47 @@ another machine at `http://command:6006` (bind with `--bind_all`).
 
 ---
 
-## 2. `rae-dev-workhorse` — serving plane + CUDA box
+## 2. `rae-dev-workhorse` — serving plane
 
-Hardware: **RTX 5060 Ti 16GB** (Blackwell, `sm_120`) per ADR-021. The earlier
-GTX 1050 + cu126 setup is preserved in ADR-014 (superseded) and
-git history for anyone reconstructing the old environment.
+Hardware: **XFX Radeon RX 7900 XTX** (Navi 31, RDNA3, 24 GB VRAM) per
+ADR-027. The two earlier NVIDIA cards (GTX 1050 → cu126 under ADR-014;
+RTX 5060 Ti → cu128 under ADR-021, both superseded) are preserved in
+`DECISIONS.md` and git history for anyone reconstructing those
+environments.
 
-**NVIDIA driver** (System76's packaging):
-
-```bash
-sudo apt install -y system76-driver-nvidia
-sudo reboot
-nvidia-smi   # should list the RTX 5060 Ti
-```
-
-If `apt` doesn't pick a Blackwell-ready driver (it needs the 570+ branch),
-install directly from NVIDIA's repo:
+**GPU driver.** Nothing to install. Pop!_OS 24.04 ships `amdgpu` in-tree
+and auto-binds it on boot. Verify:
 
 ```bash
-sudo apt install -y nvidia-driver-570         # or 575 / latest stable
-sudo reboot
-nvidia-smi   # CUDA Version: should be 12.8 or higher in the header
+lspci -k | grep -A 3 -i "vga\|3d controller"
+# expect: Kernel driver in use: amdgpu
 ```
 
-**Pinned CUDA PyTorch environment** (see ADR-021). PyTorch's **cu128** wheel
-line supports the 5060 Ti's `sm_120` and is the current generation. Install
-in a *separate* venv from the main one (the main lockfile stays CPU-only —
-that's the build plane behavior):
+**Ollama with GPU offload.** Reuse the ADR-021-era install (same package;
+same `/etc/systemd/system/ollama.service.d/override.conf` pinning
+`OLLAMA_HOST=0.0.0.0`). Ollama auto-detects the 7900 XTX via its Vulkan
+backend — no ROCm install required (ADR-027). Verify the detection:
 
 ```bash
-# inside the project on workhorse:
-uv venv .venv-cu128
-source .venv-cu128/bin/activate
-
-# cu128-line torch first (lets uv resolve the right wheel)
-uv pip install torch --index-url https://download.pytorch.org/whl/cu128
-
-# Non-torch deps, then the package itself without re-resolving torch
-uv pip install tensorboard pytest ruff
-uv pip install -e . --no-deps
+sudo systemctl restart ollama   # if upgrading from a prior CUDA-era install
+journalctl -u ollama --no-pager -n 30 | grep "inference compute"
+# expect: library=Vulkan ... description="AMD Radeon RX 7900 XTX ..." total="24.0 GiB"
 ```
 
-Verify CUDA is actually reachable before trusting any benchmark:
+And a smoke call to confirm GPU-backed inference:
 
 ```bash
-python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-# expect: True  NVIDIA GeForce RTX 5060 Ti
+ollama run qwen2.5-coder "say hi" --verbose
+# expect: non-trivial eval rate (tens of tokens/sec), model loaded into VRAM
 ```
 
-If a future PyTorch release drops `sm_120` (won't be soon — Blackwell is the
-current architecture as of writing), repin within the cu128 line or jump to
-whatever the contemporary wheel index is. ADR-021 supersedes ADR-014 on this
-mechanism, but the same "separate workhorse environment" pattern still
-applies.
+**No local PyTorch venv.** Phase 2 training rents NVIDIA GPUs per ADR-003
+and ADR-026; workhorse is a serving machine, not a training machine. If
+you ever need local PyTorch on this card (e.g. for a QLoRA smoke-test
+per ADR-026's §smoke-test path), you'd install ROCm — explicitly
+deferred by ADR-027 until a concrete trigger surfaces. The historical
+`.venv-cu128` directory in a pre-ADR-027 clone of the repo is dead
+weight and can be `rm -rf`'d at convenience.
 
 **Ollama** (the model runtime):
 

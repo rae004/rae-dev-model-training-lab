@@ -18,9 +18,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/codereview"]
 
-# CPU-only PyTorch wheel for the build plane (ADR-014: the workhorse uses
-# a SEPARATE lockfile pinning the cu126 line; this main lockfile stays CPU
-# so CI and rae-dev-command don't pull NVIDIA wheels).
+# CPU-only PyTorch wheel for the build plane. CI (ubuntu-latest) and
+# rae-dev-command are both CPU-only x86_64, so CPU wheels resolve for
+# both. Training that needs CUDA rents a GPU per ADR-003/ADR-026 and
+# installs torch inside a container, not in this lockfile. The workhorse
+# itself used to pin a CUDA venv (ADR-014's cu126, then ADR-021's cu128,
+# both now superseded by ADR-027's "Vulkan via Ollama, no local PyTorch"
+# stance), but this lockfile was never where that pin lived.
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
