@@ -7,8 +7,10 @@
 # variant is 15B, not 7B — a size mismatch vs. the qwen2.5-coder:7b baseline.
 # The results.md entry documents that trade explicitly.
 #
-# ~10 GB in q4 quantization; fits comfortably in the 5060 Ti's 16 GB VRAM
-# per ADR-021 but slower per-case than the 7B models.
+# ~10 GB in q4 quantization; fits comfortably in the workhorse's current
+# 7900 XTX (24 GB VRAM, ADR-027) with headroom to spare. Was already fine on
+# the earlier 5060 Ti (16 GB, ADR-021-era). Still slower per-case than the
+# 7B models due to parameter count, not GPU.
 
 threshold = "error"
 

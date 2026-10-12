@@ -19,8 +19,11 @@ all design decisions; your job is implementation within them.
 
 1. **`uv` only.** Never bare `pip`, never `pip install` into the system. All
    dependencies go through `pyproject.toml` + `uv.lock` (`uv add`, `uv sync`).
-   Exception: the workhorse's pinned cu128 torch is installed per `SETUP.md`,
-   outside the shared lockfile (ADR-021, superseding ADR-014).
+   The shared lockfile is CPU-only — training planes that need CUDA/ROCm
+   rent GPUs per ADR-003 and install torch in a container, not in this
+   lockfile. (Earlier ADR-014/ADR-021 called for a workhorse-local pinned
+   torch venv; superseded by ADR-027 — workhorse's current 7900 XTX serves
+   via Ollama's Vulkan backend, no PyTorch locally.)
 2. **Never commit:** anything under `data/` except `data/sample/`,
    `data/scripts/`, and `data/SOURCES.md`; anything under `checkpoints/`;
    `.env`; model weights or `*.gguf` anywhere. The `.gitignore` encodes this —
@@ -31,9 +34,10 @@ all design decisions; your job is implementation within them.
    propose changes via ADR, don't drift.
 4. **Training code is fp32 and device-agnostic** (`cpu`/`cuda` selected by
    config/flag, never hardcoded). No mixed precision in Phase 1 (ADR-016).
-   The original fp16 carve-out for Pascal is moot post-ADR-021's Blackwell
-   swap, but the fp32-everywhere rule is independent and still holds —
-   simplicity over speed for the disposable Phase 1 model.
+   The fp32-everywhere rule is independent of what GPU is in which
+   machine — it's simplicity over speed for the disposable Phase 1 model.
+   Phase 2 training runs on rented NVIDIA GPUs (ADR-003/ADR-026), not
+   locally.
 5. **Decided vs. proposed.** Items marked *(proposed)* in the architecture doc
    (severity levels, category taxonomy, verdict threshold) should be
    implemented as defaults in config — easy to change, never silently changed.

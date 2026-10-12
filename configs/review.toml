@@ -11,10 +11,12 @@ threshold = "error"   # error | warning | info
 type        = "ollama"
 base_url    = "http://workhorse:11434"
 model       = "qwen2.5-coder"
-# timeout: HTTP request timeout in seconds. Sized for the workhorse GTX 1050
-# (2 GB VRAM → ~4.7 GB qwen2.5-coder mostly runs on the i7-8700 CPU). Small
-# diffs return in seconds; a full PR-sized diff can take 5–15 min. Drop to
-# ~60 if you point the backend at faster hardware. See RUNBOOK §6c.
+# timeout: HTTP request timeout in seconds. Originally sized for the GTX 1050
+# where qwen2.5-coder ran mostly on CPU and PR-sized diffs could take 5–15 min.
+# Current workhorse (7900 XTX via Vulkan per ADR-027) returns a full 11-case
+# M8 eval in ~24 s, so this value is wildly oversized — harmless, but could
+# drop to ~60 at the next config touch. Keeping as-is to preserve historical
+# soft-timeout behavior for anyone pointing at older hardware. See RUNBOOK §6c.
 timeout     = 550.0
 temperature = 0.2
 # num_thread: llama.cpp inference threads per request. Omit (or comment out) to

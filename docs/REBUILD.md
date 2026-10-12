@@ -1,5 +1,29 @@
 # Workhorse Rebuild Playbook
 
+> ## ⚠️ Historical — ADR-021 era (2026-06-26), superseded on hardware by ADR-027
+>
+> This playbook was written for the **ADR-021 GPU + PSU swap** that
+> installed an **RTX 5060 Ti** on workhorse. The workhorse's GPU has
+> since been swapped again to a **Radeon RX 7900 XTX** (ADR-027), and
+> the serving stack moved from CUDA cu128 to Ollama's Vulkan backend.
+>
+> **What stays useful here** regardless of which GPU is installed:
+> §1a (PSU swap sequencing), §1c (BIOS smoke test), §1d (Above 4G
+> Decoding / Resizable BAR — still required for 16 GB+ cards on this
+> motherboard), §2 (Pop!_OS install), §3 (SSH bootstrap, passwordless
+> sudo, headless auto-suspend disable), §4a (Ollama install + LAN
+> override).
+>
+> **What's historical / do not follow for AMD cards:** §4
+> (NVIDIA-specific driver install), §5 (uv + repo clone — the clone
+> itself is fine; path is unchanged), §6 (cu128 venv — not possible
+> without CUDA hardware), §7 (Ollama + model pull step is still
+> correct but the perf numbers are 5060-Ti-era), §9+ (training-related
+> sections; see RUNBOOK.md §3 for the current post-ADR-027 story).
+>
+> **For current workhorse state and setup,** go to
+> [`docs/SETUP.md`](SETUP.md) §2 first.
+
 The day-of procedure for the GPU + PSU swap captured in
 [ADR-021](DECISIONS.md). Top-to-bottom: hardware install → fresh OS →
 fully-ready workhorse. Each step has a verification; don't proceed

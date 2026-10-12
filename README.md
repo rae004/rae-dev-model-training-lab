@@ -11,7 +11,9 @@ and evaluated, with a genuinely useful local reviewer as the payoff.
 >   samples produce real-looking code memorized from the training set —
 >   the "garbage in / garbage out" lesson made vivid.
 > - A device-agnostic training loop with byte-identical CPU vs CUDA results
->   and a ~10× speedup on the RTX 5060 Ti (M3).
+>   and a ~10× speedup on the (then-installed) RTX 5060 Ti (M3). The
+>   workhorse's GPU has since been swapped to a Radeon RX 7900 XTX per
+>   ADR-027; serving now runs on Ollama's Vulkan backend.
 > - A working `codereview review` CLI talking to `qwen2.5-coder` via Ollama
 >   on the workhorse (M7), interactive on the new GPU.
 > - A baseline eval score against the off-the-shelf model that any Phase 2
@@ -89,9 +91,11 @@ uv run python -m codereview sample --checkpoint runs/smoke/ckpt.pt \
 ```
 
 Phase 1 (the from-scratch model) ran on CPU on `rae-dev-command` and on CUDA
-on `rae-dev-workhorse`'s RTX 5060 Ti (Blackwell, swapped in per ADR-021);
-Phase 2 fine-tuning runs on a rented GPU. The three-machine split and the
-reasoning behind it are in the architecture doc.
+on `rae-dev-workhorse` (which had a 5060 Ti at the time per ADR-021; the
+workhorse now runs a Radeon RX 7900 XTX via Ollama's Vulkan backend per
+ADR-027 — serving plane only, no local training). Phase 2 fine-tuning
+runs on a rented GPU. The three-machine split and the reasoning behind
+it are in the architecture doc.
 
 ## Roadmap
 
@@ -118,9 +122,11 @@ reasoning behind it are in the architecture doc.
 - [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — end-to-end procedure for the Phase 1
   real-world runs: corpus prep, char-level training on both machines, sampling,
   results-log entry, Ollama setup, and the live `git diff | reviewer`.
-- [`docs/REBUILD.md`](docs/REBUILD.md) — one-time day-of playbook for the
-  workhorse GPU + PSU swap (ADR-021): physical install → fresh Pop!_OS →
-  drivers → cu128 venv → first CUDA run.
+- [`docs/REBUILD.md`](docs/REBUILD.md) — historical, one-time day-of
+  playbook for the ADR-021 GPU+PSU swap to the (then-installed) RTX
+  5060 Ti. Superseded on the hardware front by ADR-027 (now a 7900
+  XTX / Vulkan), but kept for the still-good non-GPU-specific bits
+  (SSH bootstrap, BIOS prep, auto-suspend disable).
 - [`docs/tokenizer-comparison.md`](docs/tokenizer-comparison.md) — char vs. BPE
   compression measured on the Phase 1 corpus (the M5 lesson).
 - [`docs/results.md`](docs/results.md) — reverse-chronological training results.

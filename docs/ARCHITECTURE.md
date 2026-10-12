@@ -15,26 +15,30 @@ reflects a decision already taken.
 ## 1. Hardware and roles
 
 No local machine is a primary fine-tuning rig — Phase 2 training is offloaded
-to rented hardware (ADR-003) — but the workhorse runs an RTX 5060 Ti 16GB
-(Blackwell, `sm_120`, GDDR7) per ADR-021 that comfortably hosts the always-on
-reviewer and Phase 1's CUDA track.
+to rented hardware (ADR-003) — but the workhorse's AMD Radeon RX 7900 XTX
+(24 GB VRAM) per ADR-027 comfortably hosts the always-on reviewer via
+Ollama's Vulkan backend. Phase 1's CUDA track was closed on the earlier
+RTX 5060 Ti (ADR-021, now superseded) and is historical.
 
 | Host | Spec | Role |
 | --- | --- | --- |
 | `rae-dev-command` | Ryzen 9 9900X (12c/24t), 64 GB | **Build plane** — from-scratch experiments (CPU track), fine-tuning orchestration, eval harness |
-| `rae-dev-workhorse` | i7-8700 (6c/12t), 32 GB, RTX 5060 Ti 16GB | **Serving plane** — always-on reviewer (Ollama, full GPU offload); also the CUDA box: Phase 1 GPU track and local smoke-testing of the cloud training container |
+| `rae-dev-workhorse` | i7-8700 (6c/12t), 32 GB, Radeon RX 7900 XTX 24GB | **Serving plane** — always-on reviewer (Ollama, Vulkan backend, full GPU offload). No local PyTorch (ROCm not installed; ADR-027). |
 | `rae-bot-alpha` | Ryzen 3 3200G (4c), 64 GB | **Data plane** — dataset prep, curation, eval runs |
-| Rented GPU | cloud, burst | Phase 2 QLoRA fine-tuning only |
+| Rented GPU | cloud, burst | Phase 2 QLoRA fine-tuning only (NVIDIA per ADR-026) |
 
 All three local machines are **x86_64** (Pop!_OS 24.04 ships only that
 architecture), so the same lockfile and CPU `torch` wheel resolve identically
 on every box — and on GitHub Actions' `ubuntu-latest` CI runner. An aarch64
 addition would need a second source mapping in `pyproject.toml`.
 
-The 5060 Ti's Blackwell architecture is supported by the current PyTorch
-cu128 wheel line, which the workhorse pins in its own separate venv (the main
-lockfile stays CPU-only — that's the build plane). Inference via
-llama.cpp/Ollama runs fully on the GPU.
+The 7900 XTX runs on `amdgpu` (in-tree Pop!_OS kernel driver) — nothing to
+install. Ollama auto-detects it via its Vulkan backend (verified
+performance-equivalent to the earlier cu128 setup for this workload, see
+docs/results.md 2026-10-12 entry). Inference via llama.cpp/Ollama runs fully
+on the GPU. ROCm (AMD's compute stack, needed for local PyTorch) is
+explicitly deferred by ADR-027 until a concrete trigger justifies the
+setup cost.
 
 ### Machine communication
 
@@ -231,11 +235,13 @@ sequenceDiagram
 ## 6. Model build and promotion
 
 Phase 1 produces a disposable from-scratch model (a teaching artifact, not the
-reviewer). Phase 2 fine-tunes a small pretrained code model on a rented GPU into
-the real reviewer — with the training container smoke-tested locally on the
-workhorse's RTX 5060 Ti before any rental time is spent. In both cases the eval
-harness gates whether a candidate is promoted onto the always-on serving plane,
-and Ollama tags give clean versioning and rollback.
+reviewer). Phase 2 fine-tunes a small pretrained code model on a rented GPU
+into the real reviewer. The ADR-021-era plan smoke-tested the training
+container locally on the workhorse's 5060 Ti; post-ADR-027 that path is
+unavailable (no local PyTorch on the 7900 XTX without ROCm), so training
+containers smoke-test on a tiny rented spot instance instead. In both cases
+the eval harness gates whether a candidate is promoted onto the always-on
+serving plane, and Ollama tags give clean versioning and rollback.
 
 ```mermaid
 flowchart TD
