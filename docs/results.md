@@ -44,6 +44,92 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-10-12 — M8 eval on new workhorse GPU (7900 XTX via Vulkan, per ADR-027)
+
+First eval after the workhorse GPU swap captured in ADR-027: the RTX
+5060 Ti is gone, replaced by an XFX Radeon RX 7900 XTX (Navi 31, RDNA3,
+24 GB VRAM). Ollama auto-detected the card via its **Vulkan backend**;
+no ROCm install was needed. This entry records the resulting
+performance and quality numbers so ADR-027's "Vulkan is sufficient"
+claim has lived data.
+
+**Not** a new baseline. Same model, same config, same eval set as the
+2026-07-05 entry — the only variable is the physical GPU + the
+compute library (CUDA cu128 → Vulkan). This entry answers: "did the
+GPU change move the review quality?" **No, within sampling-variance
+noise.**
+
+- **Commit:** `35680ac` (main HEAD at run time; this entry adds on top)
+- **Backend:** `qwen2.5-coder:latest` on `http://workhorse:11434`
+- **Config:** `configs/review.toml` (unchanged)
+- **GPU + library:** XFX RX 7900 XTX via Ollama's Vulkan backend
+  (`library=Vulkan description="AMD Radeon RX 7900 XTX (RADV NAVI31)"
+  total="24.0 GiB" available="23.8 GiB"`)
+- **Wall time:** **24 s** for all 11 cases
+- **Full report:** `docs/baseline-eval-7900xtx-vulkan.md`
+
+#### Three-way comparison across M8 runs on this same setup
+
+| run date | GPU | library | wall | strict F1 | sev-only F1 | verdict |
+| --- | --- | --- | ---:| ---:| ---:| ---:|
+| 2026-06-28 | 5060 Ti | CUDA cu128 | 72 s (cold) | 0.273 | — (strict-only harness) | 0.727 |
+| 2026-07-05 | 5060 Ti | CUDA cu128 | 21 s (warm) | 0.364 | 0.545 | 0.727 |
+| **2026-10-12** | **7900 XTX** | **Vulkan** | **24 s** | **0.455** | **0.636** | **0.727** |
+
+**Verdict accuracy is identical across all three runs** (0.727, 8 of
+11). The strict F1 drift (0.273 → 0.364 → 0.455) is sampling variance
+from `temperature = 0.2` compounded over three months of possible
+`qwen2.5-coder:latest` tag updates in Ollama's registry — not a
+hardware signal. The 2026-07-05 entry's "soft target" framing holds:
+the baseline exists as a *range*, not a hard number.
+
+#### Per-case shape
+
+Same security-perfect pattern as every prior run. Specific per-case
+drift from 2026-07-05 (sampling-variance churn, not systematic):
+
+- `n-plus-one`: 2026-07-05 was strict 0 / sev-only 0 (genuine miss);
+  today strict 0 / sev-only 1 (label-fixable). Improved by one tier.
+- `new-function-no-tests`: 2026-07-05 was strict 0 / sev-only 1
+  (label-fixable); today strict 0 / sev-only 0 (genuine miss).
+  Regressed by one tier.
+- `god-function`: 2026-07-05 model produced 2 findings; today model
+  produced 0 findings. Different behavior, same outcome under scoring.
+- `cryptic-names`: unchanged (strict 0, sev-only 1).
+
+The ADR-023 "~⅓ categorization, ~⅔ detection" split for the
+weakness-targeted slice still holds in aggregate — just which
+specific cases are in which bucket varies run-to-run.
+
+#### What this validates for ADR-027
+
+- **Vulkan handles our workload.** 24 s wall time is noise-equivalent
+  to the 5060 Ti CUDA setup (21 s warm). Review-quality is unchanged
+  (within noise).
+- **Zero install cost to get here.** Pop!_OS 24.04 ships `amdgpu` in
+  the kernel; Ollama ships a Vulkan backend; the models were already
+  cached. The 7900 XTX was serving reviews on first boot after the
+  swap.
+- **24 GB VRAM is headroom.** `qwen2.5-coder:latest` is 4.7 GB; model
+  loads with ~19 GB VRAM free. Room for larger-model experiments
+  (e.g. `qwen2.5-coder:14b`) without touching the hardware.
+
+#### What this does not say
+
+- **Nothing about ROCm vs Vulkan performance** on this card. We didn't
+  install ROCm; we didn't need to. ADR-027 defers that comparison to
+  a future amendment ADR if any of three triggers hit.
+- **Nothing about larger-model performance.** If we move to
+  `qwen2.5-coder:14b` for the serving backend, Vulkan may show a
+  larger perf gap vs ROCm than it does on the 7B. Would need to
+  measure then.
+- **Nothing about Phase 2 training performance.** Phase 2 training
+  rents NVIDIA GPUs per ADR-003 / ADR-026; the 7900 XTX is a serving
+  machine, not a training machine. Local PyTorch would require ROCm,
+  which this ADR explicitly defers.
+
+---
+
 ### 2026-07-05 — Dual-metric baseline rerun on qwen2.5-coder (post-ADR-024 impl)
 
 First eval run using the dual-metric harness implemented in PR #34
