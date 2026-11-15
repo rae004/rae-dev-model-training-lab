@@ -1,8 +1,9 @@
 # Code Review Assistant
 
-A small, self-hosted language model that reviews Python and TypeScript diffs —
-built primarily as a hands-on project to understand how such models are created
-and evaluated, with a genuinely useful local reviewer as the payoff.
+A small, self-hosted language model for Python and TypeScript — built primarily
+as a hands-on project to understand how such models are created, fine-tuned,
+and evaluated. Phase 1's payoff was a working local reviewer; Phase 2 (ADR-028)
+grows it into a multi-purpose local coding agent.
 
 > **Status:** **Phase 1 complete.** All eight milestones (M1–M8) shipped
 > and ran on real hardware. Headline outcomes recorded in
@@ -21,10 +22,15 @@ and evaluated, with a genuinely useful local reviewer as the payoff.
 >   accuracy overall, biased toward false negatives — the clearest
 >   Phase 2 fine-tuning target.
 >
-> **Phase 2 is next:** QLoRA fine-tune of a small pretrained code model
-> into the real reviewer, per ADR-001 / ADR-003 / ADR-017. The deferred
-> taxonomy + scoring decisions come back to the table now, informed by
-> the M8 baseline numbers.
+> **Phase 2 underway:** the fine-tune target grew (ADR-028) from a
+> reviewer-only model into a **multi-purpose local coding agent** serving
+> three surfaces — single-file transforms for rae-local-agent, structured
+> review (the M7/M8 harness), and concise repo-aware chat for
+> rae-local-chat — encoding the owner's coding philosophy in the weights.
+> M9 (weakness profile) is done; M10 (the ADR-029 dataset: commit-mined
+> transforms, reverse mutations, declines, reviews, chat — the teacher
+> never writes the code the student trains on) is in flight. Evaluation
+> per surface is ADR-030; the plan is `docs/MILESTONES.md` M10–M15.
 
 ## What it is
 
