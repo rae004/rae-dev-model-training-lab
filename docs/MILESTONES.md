@@ -78,12 +78,15 @@ rented-GPU workflow, workhorse serving).
 
 # Phase 2 Milestones
 
-Six reviewable increments turning ADRs 022–027 into a fine-tuned
-`code-reviewer:v1` served on workhorse. Same discipline as Phase 1: one branch,
-one PR, one human review, "Done means" is the acceptance bar. Phase 2 fans out
-across machines — `command` for authoring + dataset generation (ADR-023), a
-rented RunPod A100 40GB for training (ADR-026), and `workhorse` for serving +
-evaluation (ADR-027).
+Seven reviewable increments turning ADRs 022–030 into a fine-tuned
+multi-purpose coding agent served on workhorse. Same discipline as Phase 1:
+one branch, one PR, one human review, "Done means" is the acceptance bar.
+Phase 2 fans out across machines — `command` for authoring + dataset
+generation (ADR-029), a rented RunPod A100 40GB for training (ADR-026), and
+`workhorse` for serving + evaluation (ADR-027, ADR-030). The plan below
+supersedes the reviewer-only M10–M14: after live rae-local-agent use showed
+the stock model failing focused tasks, ADR-028 (goal), ADR-029 (dataset),
+and ADR-030 (evaluation) pivoted the target.
 
 ## M9 — Weakness profile → dataset targeting plan
 **Goal:** From the dual-metric baseline (ADR-024 impl, `docs/results.md`
@@ -96,62 +99,83 @@ where baseline recall was 0 and whether each miss was miscategorization or
 silence, (ii) the three false-negative verdicts from M8 with the shape of
 each miss, (iii) a prioritized target list the ADR-023 pipeline will search
 for. No code; just the sighting shot.
+*(Complete before the pivot; its target list now feeds the review slice of
+the ADR-029 dataset.)*
 
-## M10 — Fine-tune dataset build (ADR-023)
-**Goal:** Generate ~500–1000 `(diff, Review-JSON)` pairs with the 70 / 15 / 15
-split (synthetic / weakness-targeted / authentic voice). Pipeline code in
+## M10 — Fine-tune dataset build (ADR-029)
+**Goal:** ~1,000–1,500 pairs (floor 800) in four shapes — transforms ~45 %
+(commit mining + reverse mutation), declines ~15 %, reviews ~20 % (targeted
+per M9), chat ~20 % — serialized in the qwen2.5 instruct chat template with
+the serving surfaces' actual system prompts. Pipeline code in
 `data/scripts/`, dataset under `data/finetune/` (git-ignored per ADR-011,
-regenerable from the committed recipe).
-**Done means:** deterministic generator from a committed teacher-model tag;
-every pair validates against the Review JSON schema; a composition report
-shows actual proportions + weakness-axis coverage against M9's target list;
-dataset uploaded to a HuggingFace Hub private dataset repo
-`rae004/qlora-dataset-<run-tag>`.
+regenerable from the committed recipe). The teacher writes specs, reviews,
+and chat answers — never the code outputs the student trains on.
+**Done means:** deterministic generator (fixed seed, pinned teacher-model
+tag); every pair passes its shape's mechanical gate (clean `git apply` for
+transforms, byte-identical declines, schema-valid reviews, length-capped
+chat); a composition report shows shape proportions, philosophy-anchor
+coverage, M9 weakness-axis coverage, source-repo breakdown, and a
+token-length histogram; dataset uploaded to a HuggingFace Hub private
+dataset repo `rae004/qlora-dataset-<run-tag>`.
 
-## M11 — QLoRA training image + RunPod smoke test
-**Goal:** `docker/qlora-runpod/Dockerfile` per ADR-026 with the ADR-025
-dependency set; `train_qlora.py` wired to `configs/qlora_baseline.toml`;
-image pushed to `ghcr.io/rae004/rae-dev-model-training-lab-qlora`. A **cheap
-RunPod pod** (A4000-tier, 50-pair dataset slice, 1 epoch) validates the full
-container → train → HF Hub push → auto-exit cycle before any A100 time is
-bought. ADR-027 killed ADR-026's local-5060-Ti smoke-test path; the cheap
-RunPod path is the replacement, and an amendment ADR formally retiring the
-superseded clause lands at Phase 2 close (not in this milestone).
+## M11 — Transform eval harness + pre-training baselines (ADR-030)
+**Goal:** The mechanical transform harness and its ~20 hand-authored cases
+(decline / preservation-trap / philosophy-anchor / straight-transform
+categories), plus the tool-calling smoke check. Both transform baselines are
+measured before any candidate exists, so the gate is fixed in advance.
+**Done means:** harness and cases committed in `eval/` with unit-tested
+scoring (clean-apply, byte-for-byte preservation, targeted-change assertion,
+2×-output runaway guard); stock `qwen2.5-coder:7b` and stock `:32b`
+transform pass rates recorded in `docs/results.md`; the base model's
+tool-calling rate measured and the "materially below" threshold set per
+ADR-030; the harness runs deterministically against workhorse.
+
+## M12 — QLoRA training image + RunPod smoke test
+**Goal:** (Was M11.) `docker/qlora-runpod/Dockerfile` per ADR-026 with the
+ADR-025 dependency set and ADR-029's sequence-length amendment (8192)
+reflected in `configs/qlora_baseline.toml`; `train_qlora.py` wired to that
+config; image pushed to `ghcr.io/rae004/rae-dev-model-training-lab-qlora`.
+A **cheap RunPod pod** (A4000-tier, 50-pair dataset slice, 1 epoch)
+validates the full container → train → HF Hub push → auto-exit cycle before
+any A100 time is bought.
 **Done means:** image builds reproducibly from a committed repo SHA; the
 smoke run completes end-to-end on RunPod in ≤ 30 min for < $2; LoRA adapter
 and merged GGUF both land in HF Hub; pod self-terminates on `exit 0`.
 Smoke-run cost + wall time recorded in `docs/results.md`.
 
-## M12 — First QLoRA fine-tune run (A100 40GB)
-**Goal:** The real run per ADR-025: 3 epochs, full dataset, A100 40GB
-on-demand, max-runtime 4 hr. LoRA checkpoints + merged GGUF pushed to a
+## M13 — First QLoRA fine-tune run (A100 40GB)
+**Goal:** (Was M12.) The real run per ADR-025 as amended by ADR-029: 3
+epochs, full dataset, sequence length 8192, effective batch 32, A100 40GB
+on-demand, max-runtime 6 hr. LoRA checkpoints + merged GGUF pushed to a
 HuggingFace Hub private repo `rae004/qlora-<run-tag>` before the container
 exits.
-**Done means:** training completes within max-runtime; held-out-10%-slice
-loss curve recorded at each epoch; LoRA + merged GGUF live in HF Hub; a
+**Done means:** training completes within max-runtime; held-out-slice loss
+curve recorded at each epoch; LoRA + merged GGUF live in HF Hub; a
 `docs/results.md` entry links the run tag to the base-model + dataset +
 config commit hashes; pod self-terminated; actual cost recorded.
 
-## M13 — Serve candidate on workhorse + eval vs. baseline
-**Goal:** `ollama create code-reviewer:<run-tag>` on workhorse from the HF Hub
-GGUF (served via Vulkan per ADR-027); run the M8 eval harness per ADR-024's
-dual-metric scoring; compare the candidate directly against the
-`qwen2.5-coder:7b` baseline documented in `docs/baseline-eval.md`.
-**Done means:** scored report in `docs/results.md` with strict and
-severity-only macro F1 for candidate and baseline side by side, including a
-weakness-category breakdown showing whether M9's targeted gaps actually
-closed; verdict stated plainly ("candidate beat baseline on severity-only,
-lost on strict" or similar).
+## M14 — Serve candidate + evaluate all four surfaces (ADR-030)
+**Goal:** (Was M13.) `ollama create rae-agent:<run-tag>` on workhorse from
+the HF Hub GGUF (served via Vulkan per ADR-027); run the full ADR-030
+battery: review (M8 harness, ADR-024 dual-metric, vs. the existing
+baseline), transform harness (vs. both M11 baselines), tool-calling smoke
+check (vs. the M11 base rate), chat conciseness + qualitative review.
+**Done means:** a `docs/results.md` entry reports all four surfaces with
+candidate and baselines side by side, and states each ADR-030 promotion
+gate plainly as pass/fail: transform pass rate beats stock-7b; review
+metrics not regressed below the stock-7b baseline; tool calling not
+degraded; chat reviewed.
 
-## M14 — Iterate or close Phase 2 (conditional on M13)
-**Goal:** If M13's candidate beats the baseline on at least one metric with no
-major regression on the other — freeze the artifact, write a Phase 2 close-out
-note, update the README, and land an amendment ADR formally retiring
-ADR-026's superseded local-smoke-test clause. If it didn't — diagnose
-(dataset shape? LR? under-trained? wrong rank?), make one targeted change,
-re-run M12→M13 once, and record both runs.
-**Done means:** either (i) Phase 2 shipped — `code-reviewer:v1` tagged in
-Ollama on workhorse, README reflects the new default, retrospective note
-committed, superseded-clause amendment ADR merged; or (ii) a second iteration
-shipped with a one-paragraph delta ADR explaining the change and both run
-outcomes recorded in `docs/results.md`.
+## M15 — Iterate or close Phase 2 (conditional on M14)
+**Goal:** (Was M14.) If all four gates pass — freeze the artifact, write
+the Phase 2 close-out note, update the README, and land the amendment ADR
+formally retiring ADR-026's superseded local-smoke-test clause. Adopting
+the model in rae-local-agent / rae-local-chat is those repos' work, not
+this one's. If a gate fails — diagnose (dataset shape? tool-smoke tripwire
+→ ADR-029 amendment? LR? rank?), make one targeted change, re-run M13→M14
+once, and record both runs.
+**Done means:** either (i) Phase 2 shipped — `rae-agent:v1` tagged in
+Ollama on workhorse, README reflects the new default, retrospective note +
+superseded-clause amendment ADR merged; or (ii) a second iteration shipped
+with a one-paragraph delta ADR explaining the change and both run outcomes
+recorded in `docs/results.md`.
