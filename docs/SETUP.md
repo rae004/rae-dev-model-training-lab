@@ -183,3 +183,25 @@ uv run python -c "import sys; print(sys.version)"
 ```
 
 When all four pass on every machine, the fleet is ready for Phase 1.
+
+## 5. Phase 2 credentials (`.env` on the build plane)
+
+The ADR-029 dataset pipeline needs two secrets, both in a `.env` file at the
+repo root on `rae-dev-command` (git-ignored; never committed):
+
+```
+TEACHER_API_KEY=sk-or-v1-...   # OpenRouter inference key
+HF_TOKEN=hf_...                # HuggingFace token, Write scope
+```
+
+- **TEACHER_API_KEY** — an OpenRouter **API key** (openrouter.ai → Settings →
+  Keys). Trap learned the hard way: OpenRouter *provisioning* keys share the
+  `sk-or-v1-` prefix and show as "active" in the dashboard, but they manage
+  keys rather than call models — inference requests fail with HTTP 401
+  "User not found". If you see that error with a well-formed key, you pasted
+  a provisioning key. Scope the inference key with a dollar limit at creation.
+- **HF_TOKEN** — huggingface.co → Settings → Access Tokens, **Write** scope
+  (creates and uploads to the private `rae004/qlora-dataset-<run-tag>` repo).
+
+The scripts read plain environment variables, so launch with the file
+sourced: `set -a; source .env; set +a; uv run python data/scripts/...`.

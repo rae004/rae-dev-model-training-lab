@@ -306,3 +306,34 @@ fp32, doubling as a CPU-vs-GPU benchmark), the GGUF transfer mechanism
 (ADR-015: `rsync` over SSH), the Phase 1 pretraining corpus (ADR-018: own
 repos + a permissively licensed public slice, provenance in `data/SOURCES.md`),
 and the project license (ADR-020: Apache 2.0).
+
+---
+
+## 9. Phase 2 amendments (ADR-028 / ADR-029 / ADR-030)
+
+Sections 1–8 describe the system as designed for Phase 1 and remain accurate
+for everything they cover — in particular the frozen `review(diff) -> Review`
+seam (§3) and output contract (§4), which are unchanged. What changed at the
+Phase 2 boundary is the *goal* of the fine-tune, and with it the §8 deferred
+items, now resolved:
+
+- **Target (ADR-028):** not a reviewer-only model but a **multi-purpose local
+  coding agent** with three serving surfaces — single-file `(spec, file) →
+  rewritten file` transforms for rae-local-agent, structured review per §3/§4,
+  and concise repo-aware chat for rae-local-chat — encoding the owner's coding
+  philosophy (simplicity over complexity, concise factual answers, repo-native
+  tooling) in the weights.
+- **Dataset (ADR-029):** ~1,000–1,500 pairs in four shapes (transforms 45 %,
+  declines 15 %, reviews 20 %, chat 20 %). Code outputs come from ground truth
+  — mined commits and pristine pre-mutation originals — never from the
+  teacher, which writes only specs, reviews, and chat prose. Train-time
+  formatting equals serve-time formatting (the surfaces' actual system
+  prompts). Sequence length 8192 (amends ADR-025's 4096).
+- **Evaluation (ADR-030):** per surface — the M8 review harness unchanged and
+  still gating; a mechanical transform harness (clean apply, byte-for-byte
+  preservation, targeted-change assertions, runaway guard) with stock-7B and
+  stock-32B baselines; a tool-calling smoke check as the ADR-029 tripwire;
+  chat judged qualitatively, non-gating.
+
+The base model (`qwen2.5-coder:7b` per ADR-022) and the rented-GPU training
+workflow (ADR-003 / ADR-026) are unchanged. Plan: `docs/MILESTONES.md` M10–M15.

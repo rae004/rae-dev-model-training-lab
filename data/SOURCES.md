@@ -18,3 +18,21 @@ and the prep scripts in `data/scripts/` are how it is regenerated.
 > not chasing tag versions for a disposable teaching artifact (ADR-016).
 > Pin to a SHA in `data/scripts/sources.toml` if you need to reproduce a
 > specific run.
+
+## Fine-tune dataset pulls (ADR-029 / M10)
+
+The same six sources feed the Phase 2 fine-tune dataset. Git sources are
+fresh shallow clones (`--depth 2000`, single branch) into
+`data/finetune_cache/`; owner repos are read in place. The exact HEAD SHA of
+every source at generation time is recorded in `data/finetune/provenance.json`
+and uploaded to the HF dataset repo alongside `dataset.jsonl`, so the branch
+refs below stay reproducible per run even though they drift over time.
+
+| Source | Ref | License | Pulled |
+| --- | --- | --- | --- |
+| `~/projects/ai-security-digest` | local HEAD | n/a (owner) | 2026-11-15 |
+| `~/projects/rae-budget` | local HEAD | n/a (owner) | 2026-11-15 |
+| `~/projects/rae-time-tracker-and-invoice` | local HEAD | n/a (owner) | 2026-11-15 |
+| `github.com/fastapi/fastapi` | `master` | MIT | 2026-11-15 |
+| `github.com/TheAlgorithms/Python` | `master` | MIT | 2026-11-15 |
+| `github.com/microsoft/TypeScript` | `main` | Apache-2.0 | 2026-11-15 |
