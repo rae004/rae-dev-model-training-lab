@@ -25,8 +25,11 @@ max_chat_answer_words = 150  # the ADR-029 conciseness filter
 [teacher]
 # Pinned at generation time per ADR-029; recorded here so the recipe is the
 # provenance. The API key lives in .env (never committed).
-# model = "<pinned-at-generation-time>"
-# base_url = "<openai-compatible-endpoint>"
+# Pinned 2026-11-15: DeepSeek-V3.2 (open-weight, MIT) via OpenRouter — the
+# versioned release slug, not the drifting `deepseek-chat` alias (ADR-029:
+# DeepSeek family default, different family than the qwen2.5-coder student).
+model = "deepseek/deepseek-v3.2"
+base_url = "https://openrouter.ai/api/v1"
 temperature = 0.2
 
 [mutations]
