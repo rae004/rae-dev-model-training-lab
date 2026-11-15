@@ -37,5 +37,11 @@ torch = [{ index = "pytorch-cpu" }]
 [tool.ruff]
 line-length = 100
 
+# Ruff 0.16 expanded the built-in defaults; this is the pre-0.16 default
+# set the codebase was written against. Adopting newer rule groups is a
+# deliberate policy change, not a side effect of a version bump.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
