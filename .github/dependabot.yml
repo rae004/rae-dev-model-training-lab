@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Python deps via uv (reads pyproject.toml + uv.lock). The lockfile is
+  # CPU-only by design (CLAUDE.md) - torch for training runs lives in rented
+  # GPU containers, not here, so there is nothing CUDA-shaped to guard.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+
+  # Pin + bump GitHub Actions used in workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
