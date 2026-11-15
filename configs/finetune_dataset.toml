@@ -1,0 +1,40 @@
+# ADR-029 dataset recipe — the committed, reproducible generation config.
+# Every value here is load-bearing for regenerating the dataset bit-comparably
+# (together with a fixed seed and the pinned teacher tag below).
+
+[dataset]
+seed = 20261115
+target_total = 1200          # ADR-029: 1000-1500, floor 800
+floor_total = 800
+
+# Shape proportions (ADR-029). Approximate — land where generation +
+# filtering produces valid pairs; the composition report shows actuals.
+[proportions]
+transform = 0.45
+decline = 0.15
+review = 0.20
+chat = 0.20
+
+[limits]
+# Transform-pair source files are capped so spec + file + output fits the
+# ADR-029-amended 8192-token sequence length. Tokens estimated at ~2 bytes
+# per token for code (measured in data/scripts/tokens_per_kb.py).
+max_file_tokens = 3500
+max_chat_answer_words = 150  # the ADR-029 conciseness filter
+
+[teacher]
+# Pinned at generation time per ADR-029; recorded here so the recipe is the
+# provenance. The API key lives in .env (never committed).
+# model = "<pinned-at-generation-time>"
+# base_url = "<openai-compatible-endpoint>"
+temperature = 0.2
+
+[mutations]
+# Reverse-mutation rules (ADR-029): each named rule injects one anti-pattern
+# into a real file; the pristine original is the ground-truth output. Every
+# ADR-028 philosophy anchor has a rule and a minimum pair count the
+# composition report must prove.
+min_pairs_per_rule = 30
+
+[upload]
+hf_repo_prefix = "rae004/qlora-dataset"
