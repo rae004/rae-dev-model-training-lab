@@ -61,6 +61,7 @@ class SourceFiles:
 
     repo: str
     files: list[tuple[str, str]]  # (relative path, text)
+    owner: bool = False  # ADR-029: only owner repos feed the chat slice
 
 
 def unified_diff(rel: str, before: str, after: str) -> str:
@@ -94,7 +95,7 @@ def build_dataset(
 
     # -- mutation transforms (no teacher involved) --
     mutation_budget = min(len(RULES) * min_per_rule, counts["transform"] // 2)
-    records += _mutation_pairs(sources, rng, mutation_budget, min_per_rule)
+    records += _mutation_pairs(sources, rng, mutation_budget)
 
     # -- commit-mined transforms (teacher writes the spec only) --
     mined_budget = counts["transform"] - len(records)
@@ -151,7 +152,9 @@ def build_dataset(
         records.append(review_record(diff, review_json, {"repo": commit.repo, "sha": commit.sha}))
 
     # -- chat (teacher asks, then answers under the word cap) --
-    owner_material = [(s.repo, rel, text) for s in sources for rel, text in s.files]
+    # Owner repos only (ADR-029): the chat slice teaches conversation about
+    # the owner's code in the owner's voice, not about the public corpus.
+    owner_material = [(s.repo, rel, text) for s in sources if s.owner for rel, text in s.files]
     rng.shuffle(owner_material)
     answer_system = build_chat_answer_system(limits["max_chat_answer_words"])
     for repo, rel, text in owner_material[: counts["chat"]]:
@@ -184,18 +187,23 @@ def _mutation_pairs(
     sources: list[SourceFiles],
     rng: random.Random,
     budget: int,
-    min_per_rule: int,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     files = [(s.repo, rel, text) for s in sources for rel, text in s.files]
     rule_names = sorted(RULES)
     per_rule = {name: 0 for name in rule_names}
-    attempts = 0
-    while len(records) < budget and attempts < budget * 20 and files:
-        attempts += 1
+    # Each rule draws from its own shuffled pool so a (rule, file) combo is
+    # tried at most once. Sampling with replacement here produced duplicate
+    # pairs that the final dedupe collapsed, starving rules below minimum.
+    pools: dict[str, list[tuple[str, str, str]]] = {}
+    for name in rule_names:
+        pool = list(files)
+        rng.shuffle(pool)
+        pools[name] = pool
+    while len(records) < budget and any(pools.values()):
         # Round-robin toward the rule furthest below its minimum.
-        rule_name = min(rule_names, key=lambda n: per_rule[n])
-        repo, rel, text = rng.choice(files)
+        rule_name = min((n for n in rule_names if pools[n]), key=lambda n: per_rule[n])
+        repo, rel, text = pools[rule_name].pop()
         language = "python" if rel.endswith(".py") else "typescript"
         mutation = RULES[rule_name](text, rng, language=language)
         if mutation is None or estimate_tokens(mutation.mutated) > 3500:

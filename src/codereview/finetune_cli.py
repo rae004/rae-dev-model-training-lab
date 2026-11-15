@@ -125,7 +125,13 @@ def main(argv: list[str] | None = None) -> int:
         name = source["name"]
         provenance[name] = head_sha(repo)
         mined += mine_repo(repo, name, max_file_tokens=max_file_tokens)
-        sources.append(SourceFiles(repo=name, files=_sample_files(repo, max_file_tokens)))
+        sources.append(
+            SourceFiles(
+                repo=name,
+                files=_sample_files(repo, max_file_tokens),
+                owner=source.get("license") == "owner",
+            )
+        )
         print(f"{name}: {len(mined)} mined commits so far, HEAD {provenance[name][:12]}")
 
     records, report = build_dataset(mined, sources, teacher, config)
