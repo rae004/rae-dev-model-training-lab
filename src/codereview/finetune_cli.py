@@ -34,7 +34,7 @@ from codereview.finetune_serialize import write_jsonl
 from codereview.finetune_teacher import Teacher, TeacherConfig
 
 CHAT_EXTENSIONS = ALLOWED_EXTENSIONS | {".md"}
-MAX_FILES_PER_REPO = 400
+MAX_FILES_PER_REPO = 800
 CLONE_DEPTH = 2000
 
 _SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "dist", "build", ".next"}

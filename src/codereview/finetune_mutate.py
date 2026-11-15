@@ -188,14 +188,18 @@ def backcompat_alias(text: str, rng: random.Random, *, language: str) -> Mutatio
 
 # ---------- concrete_annotation (python only) -----------------------------
 
+# Subscripted or bare (`x: Sequence[int]` and `x: Sequence` both match).
 _ABSTRACT_TO_CONCRETE = [
-    ("Sequence[", "list["),
-    ("Mapping[", "dict["),
-    ("Iterable[", "list["),
+    ("Sequence", "list"),
+    ("MutableMapping", "dict"),
+    ("Mapping", "dict"),
+    ("Iterable", "list"),
+    ("Collection", "list"),
+    ("Iterator", "list"),
 ]
 
 _ANNOTATION_SPEC = (
-    "Public functions should accept abstract types (Sequence, Mapping, "
+    "Public functions should accept abstract types (e.g. Sequence, Mapping, "
     "Iterable) rather than concrete containers when they only iterate or "
     "look up. Widen the parameter annotations accordingly. Change nothing "
     "else."
@@ -205,11 +209,11 @@ _ANNOTATION_SPEC = (
 def concrete_annotation(text: str, rng: random.Random, *, language: str) -> Mutation | None:
     if language != "python":
         return None
-    swaps = [(a, c) for a, c in _ABSTRACT_TO_CONCRETE if f": {a}" in text]
+    swaps = [(a, c) for a, c in _ABSTRACT_TO_CONCRETE if re.search(rf": {a}\b", text)]
     if not swaps:
         return None
     abstract, concrete = rng.choice(swaps)
-    mutated = text.replace(f": {abstract}", f": {concrete}", 1)
+    mutated = re.sub(rf": {abstract}\b", f": {concrete}", text, count=1)
     if mutated == text or not _parses(mutated):
         return None
     return Mutation("concrete_annotation", _ANNOTATION_SPEC, mutated, text)
