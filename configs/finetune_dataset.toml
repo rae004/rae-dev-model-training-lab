@@ -39,5 +39,13 @@ temperature = 0.2
 # composition report must prove.
 min_pairs_per_rule = 30
 
+# Report-gate overrides only — sampling still budgets on the default, so an
+# override never changes which pairs a seed generates (ADR-029 allows
+# minimums tuned during generation).
+[mutations.min_overrides]
+# Plateaued at 22 across three runs even after widening the pattern to bare
+# annotations and six abstract types: the corpus ceiling, not a sampling bug.
+concrete_annotation = 20
+
 [upload]
 hf_repo_prefix = "rae004/qlora-dataset"

@@ -100,6 +100,13 @@ def test_compose_report_shows_shapes_rules_repos() -> None:
     ]
     report = compose_report(records, min_pairs_per_rule=30)
     assert "| transform | 1 | 50.0% |" in report
-    assert "| noise_comments | 1 | **NO** |" in report
+    assert "| noise_comments | 1 | 30 | **NO** |" in report
     assert "| r2 | 1 |" in report
     assert "Token-length histogram" in report
+
+
+def test_compose_report_honors_per_rule_minimum_overrides() -> None:
+    report = compose_report(
+        [_transform()], min_pairs_per_rule=30, min_overrides={"noise_comments": 1}
+    )
+    assert "| noise_comments | 1 | 1 | yes |" in report

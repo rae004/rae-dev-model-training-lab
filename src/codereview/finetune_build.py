@@ -89,6 +89,10 @@ def build_dataset(
     limits = config["limits"]
     counts = {shape: int(total * props[shape]) for shape in props}
     min_per_rule = config["mutations"]["min_pairs_per_rule"]
+    # Overrides relax the report gate only — the sampling budget below stays
+    # on the default minimum so adding an override never changes which pairs
+    # a given seed generates.
+    min_overrides = config["mutations"].get("min_overrides", {})
 
     records: list[dict[str, Any]] = []
     specs: list[SpecSource] = []
@@ -179,7 +183,7 @@ def build_dataset(
         is None
     ]
     final = dedupe(gated)
-    report = compose_report(final, min_pairs_per_rule=min_per_rule)
+    report = compose_report(final, min_pairs_per_rule=min_per_rule, min_overrides=min_overrides)
     return final, report
 
 

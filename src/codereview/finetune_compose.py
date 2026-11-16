@@ -80,8 +80,14 @@ def dedupe(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return kept
 
 
-def compose_report(records: list[dict[str, Any]], *, min_pairs_per_rule: int) -> str:
+def compose_report(
+    records: list[dict[str, Any]],
+    *,
+    min_pairs_per_rule: int,
+    min_overrides: dict[str, int] | None = None,
+) -> str:
     """Markdown composition report — the human-review artifact for the M10 PR."""
+    overrides = min_overrides or {}
     shapes = Counter(r["shape"] for r in records)
     repos = Counter(r["meta"].get("repo", "?") for r in records)
     rules = Counter(
@@ -95,11 +101,12 @@ def compose_report(records: list[dict[str, Any]], *, min_pairs_per_rule: int) ->
         lines.append(f"| {shape} | {count} | {count / total:.1%} |")
 
     lines += ["", "## Mutation-rule coverage", ""]
-    lines += [f"Minimum per rule: {min_pairs_per_rule}", ""]
-    lines += ["| rule | count | meets minimum |", "| --- | --- | --- |"]
+    lines += [f"Default minimum per rule: {min_pairs_per_rule}", ""]
+    lines += ["| rule | count | minimum | meets minimum |", "| --- | --- | --- | --- |"]
     for rule, count in sorted(rules.items()):
-        ok = "yes" if count >= min_pairs_per_rule else "**NO**"
-        lines.append(f"| {rule} | {count} | {ok} |")
+        minimum = overrides.get(rule, min_pairs_per_rule)
+        ok = "yes" if count >= minimum else "**NO**"
+        lines.append(f"| {rule} | {count} | {minimum} | {ok} |")
 
     lines += ["", "## Source repositories", "", "| repo | pairs |", "| --- | --- |"]
     for repo, count in repos.most_common():
