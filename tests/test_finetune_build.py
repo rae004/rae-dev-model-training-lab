@@ -63,7 +63,7 @@ def _mined() -> list[MinedCommit]:
 
 
 def _sources() -> list[SourceFiles]:
-    return [SourceFiles(repo="repo-a", files=[("calc.py", PY_SAMPLE)])]
+    return [SourceFiles(repo="repo-a", files=[("calc.py", PY_SAMPLE)], owner=True)]
 
 
 def test_build_dataset_produces_all_four_shapes() -> None:
@@ -99,3 +99,28 @@ def test_unified_diff_round_trips_shape() -> None:
     d = unified_diff("x.py", "a\n", "b\n")
     assert d.startswith("--- a/x.py")
     assert "+b" in d
+
+
+def test_chat_pairs_come_only_from_owner_repos() -> None:
+    sources = _sources() + [
+        SourceFiles(repo="public-repo", files=[("lib.py", PY_SAMPLE)], owner=False)
+    ]
+    records, _ = build_dataset(_mined(), sources, StubTeacher(), CONFIG)
+    chat_repos = {r["meta"]["repo"] for r in records if r["shape"] == "chat"}
+    assert chat_repos == {"repo-a"}
+
+
+def test_mutation_pairs_never_repeat_a_rule_file_combo() -> None:
+    files = [
+        (f"mod_{i}.py", PY_SAMPLE.replace("compute_total", f"compute_total_{i}")) for i in range(20)
+    ]
+    sources = [SourceFiles(repo="repo-a", files=files, owner=True)]
+    config = dict(CONFIG, dataset={"seed": 1, "target_total": 200, "floor_total": 1})
+    records, _ = build_dataset(_mined(), sources, StubTeacher(), config)
+    combos = [
+        (r["meta"]["rule"], r["messages"][-2]["content"])
+        for r in records
+        if r["shape"] == "transform" and "rule" in r["meta"]
+    ]
+    assert combos, "expected mutation pairs"
+    assert len(combos) == len(set(combos))

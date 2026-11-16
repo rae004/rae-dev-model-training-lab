@@ -109,3 +109,16 @@ def test_concrete_annotation_narrows_one_annotation() -> None:
 
 def test_concrete_annotation_declines_without_abstract_types() -> None:
     assert _apply("concrete_annotation", "def f(x: list[int]):\n    return x\n", "python") is None
+
+
+def test_concrete_annotation_matches_bare_and_extended_abstract_types() -> None:
+    bare = "def f(x: Iterable):\n    return list(x)\n"
+    mutation = _apply("concrete_annotation", bare, "python")
+    assert mutation is not None
+    assert ": list" in mutation.mutated
+    assert mutation.original == bare
+
+    extended = "def g(pairs: Collection[str]) -> int:\n    return len(pairs)\n"
+    mutation = _apply("concrete_annotation", extended, "python")
+    assert mutation is not None
+    assert ": list[str]" in mutation.mutated
