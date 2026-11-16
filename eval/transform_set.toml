@@ -1,0 +1,460 @@
+# M11 transform eval set — hand-authored cases per ADR-030.
+#
+# Each case is (spec, input file, per-case assertions) in one of four named
+# categories. Scoring is mechanical (src/codereview/transform_eval.py):
+# clean apply, byte-for-byte preservation of non-targeted lines, targeted
+# change present, 2x-output runaway guard.
+#
+# Case fields:
+#   may_change     — regexes over INPUT lines; matching lines are the ones
+#                    the spec targets and may change or disappear. Every
+#                    other input line must survive byte-for-byte, in order.
+#   must_match     — regexes the OUTPUT must match (the targeted change).
+#   must_not_match — regexes the OUTPUT must not match.
+# Decline cases take no assertions: pass means byte-identical output.
+#
+# Keep inputs small — a reader should be able to score any case by eye in
+# ~30s (same rule as eval_set.toml). Inputs must end with a newline.
+
+# ===========================================================================
+# Declines — the spec has nothing to do in this file
+# ===========================================================================
+
+[[cases]]
+name = "decline-absent-function"
+category = "decline"
+description = "Spec renames a function this file does not contain."
+spec = "Rename the function `fetch_users` to `list_users`, updating all call sites."
+path = "src/accounts.py"
+input = '''
+def create_account(name: str, email: str) -> dict:
+    return {"name": name, "email": email, "active": True}
+
+
+def deactivate(account: dict) -> dict:
+    return {**account, "active": False}
+'''
+
+[[cases]]
+name = "decline-absent-nullcheck"
+category = "decline"
+description = "Spec hardens a function that lives in another file."
+spec = "Add a null-check to `parseConfig` so a missing config object raises a clear error."
+path = "src/time.ts"
+input = '''
+export function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US");
+}
+
+export function sumHours(entries: number[]): number {
+  return entries.reduce((acc, h) => acc + h, 0);
+}
+'''
+
+[[cases]]
+name = "decline-no-retry-loop"
+category = "decline"
+description = "Spec removes a retry loop; this send_email has none."
+spec = "Remove the retry loop from `send_email` — failures should surface immediately."
+path = "src/mailer.py"
+input = '''
+import smtplib
+
+
+def send_email(host: str, sender: str, recipient: str, body: str) -> None:
+    with smtplib.SMTP(host) as smtp:
+        smtp.sendmail(sender, recipient, body)
+'''
+
+[[cases]]
+name = "decline-already-const"
+category = "decline"
+description = "Spec converts var to const; the file already uses const."
+spec = "Convert all `var` declarations to `const`."
+path = "src/rates.ts"
+input = '''
+const HOURLY_RATE = 95;
+const CURRENCY = "USD";
+
+export function invoiceTotal(hours: number): string {
+  const amount = hours * HOURLY_RATE;
+  return `${amount} ${CURRENCY}`;
+}
+'''
+
+[[cases]]
+name = "decline-no-dead-code"
+category = "decline"
+description = "Spec deletes commented-out code; the only comments explain a why."
+spec = "Delete the commented-out code from this file."
+path = "src/session.py"
+input = '''
+import time
+
+
+def wait_for_session(check, timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if check():
+            return True
+        # The auth proxy drops the first probe after rotation; a short
+        # sleep avoids hammering it during the known-bad window.
+        time.sleep(0.2)
+    return False
+'''
+
+# ===========================================================================
+# Preservation traps — plausible adjacent code the spec does not name
+# ===========================================================================
+
+[[cases]]
+name = "trap-sibling-function-rename"
+category = "preservation_trap"
+description = "Rename compute_tax; the similarly named compute_total must survive."
+spec = "Rename the function `compute_tax` to `calculate_tax`, updating all call sites."
+path = "src/billing.py"
+input = '''
+def compute_tax(amount: float, rate: float) -> float:
+    return amount * rate
+
+
+def compute_total(amount: float, rate: float) -> float:
+    tax = compute_tax(amount, rate)
+    return amount + tax
+'''
+may_change = ['compute_tax']
+must_match = ['def calculate_tax\(amount: float, rate: float\) -> float:', 'tax = calculate_tax\(amount, rate\)']
+must_not_match = ['compute_tax']
+
+[[cases]]
+name = "trap-adjacent-interface"
+category = "preservation_trap"
+description = "Add a field to UserProfile; the adjacent AdminProfile must survive."
+spec = "Add a `lastLogin: string` field to the `UserProfile` interface."
+path = "src/profiles.ts"
+input = '''
+export interface UserProfile {
+  id: string;
+  email: string;
+}
+
+export interface AdminProfile {
+  id: string;
+  email: string;
+  permissions: string[];
+}
+'''
+may_change = []
+must_match = ['lastLogin: string;']
+must_not_match = ['lastLogin: string;[\s\S]*lastLogin: string;']
+
+[[cases]]
+name = "trap-same-literal-elsewhere"
+category = "preservation_trap"
+description = "Change fetch_page's timeout default; parse_feed's identical default must survive."
+spec = "Change the default `timeout` of `fetch_page` from 30 to 60 seconds."
+path = "src/feed.py"
+input = '''
+import urllib.request
+
+
+def fetch_page(url: str, timeout: int = 30) -> bytes:
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        return resp.read()
+
+
+def parse_feed(url: str, timeout: int = 30) -> list[str]:
+    raw = fetch_page(url, timeout=timeout)
+    return raw.decode("utf-8").splitlines()
+'''
+may_change = ['def fetch_page\(url: str, timeout: int = 30\)']
+must_match = ['def fetch_page\(url: str, timeout: int = 60\) -> bytes:']
+must_not_match = ['def fetch_page\(url: str, timeout: int = 30\)']
+
+[[cases]]
+name = "trap-unused-import"
+category = "preservation_trap"
+description = "Remove unused `import os`; `import sys` and a docstring naming os must survive."
+spec = "Remove the unused `os` import."
+path = "src/entry.py"
+input = '''
+"""CLI entrypoint. Reads flags from argv, never from os.environ."""
+
+import os
+import sys
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        print("usage: entry <command>", file=sys.stderr)
+        return 2
+    return 0
+'''
+may_change = ['^import os$']
+must_match = ['(?m)^import sys$']
+must_not_match = ['(?m)^import os$']
+
+[[cases]]
+name = "trap-similar-log-lines"
+category = "preservation_trap"
+description = "Update one log message; two similar log lines must survive."
+spec = 'In `syncAll`, change the log message "starting sync" to "starting full sync".'
+path = "src/sync.ts"
+input = '''
+export async function syncAll(ids: string[]): Promise<void> {
+  console.log("starting sync");
+  for (const id of ids) {
+    console.log("starting sync for " + id);
+    await syncOne(id);
+  }
+  console.log("finished sync");
+}
+'''
+may_change = ['^  console\.log\("starting sync"\);$']
+must_match = ['console\.log\("starting full sync"\);']
+must_not_match = ['(?m)^  console\.log\("starting sync"\);$']
+
+# ===========================================================================
+# Philosophy anchors — one per ADR-028 anchor, plus the named
+# interface-narrowing regression case and the TS variant of
+# interface-over-concrete (the ADR-029 carve-out).
+# ===========================================================================
+
+[[cases]]
+name = "anchor-noise-comments"
+category = "philosophy_anchor"
+description = "Remove restating comments; the why-comment must survive."
+spec = "Remove comments that merely restate what the code does. Keep comments that explain a non-obvious why. Change nothing else."
+path = "src/ledger.py"
+input = '''
+def post_entry(ledger: dict, account: str, amount: int) -> dict:
+    # set balance
+    balance = ledger.get(account, 0)
+    # add the amount to the balance
+    balance = balance + amount
+    # Amounts are integer cents; floats drift on repeated posting.
+    updated = {**ledger, account: balance}
+    # return the result
+    return updated
+'''
+may_change = ['^    # set balance$', '^    # add the amount to the balance$', '^    # return the result$']
+must_match = ['Amounts are integer cents; floats drift on repeated posting\.']
+must_not_match = ['# set balance', '# add the amount', '# return the result']
+
+[[cases]]
+name = "anchor-dead-code"
+category = "philosophy_anchor"
+description = "Delete the commented-out block; the live code and real comment must survive."
+spec = "Delete commented-out code. Version control already remembers it. Leave real comments and all live code exactly as they are."
+path = "src/report.py"
+input = '''
+def render_summary(rows: list[dict]) -> str:
+    lines = [f"{r['name']}: {r['hours']}h" for r in rows]
+    # total = sum(r['hours'] for r in rows)
+    # lines.append(f"total: {total}h")
+    # Sorted output keeps diffs stable across runs.
+    return "\n".join(sorted(lines))
+'''
+may_change = ["^    # total = sum", "^    # lines\\.append"]
+must_match = ['Sorted output keeps diffs stable across runs\.']
+must_not_match = ['# total = sum', "# lines\\.append"]
+
+[[cases]]
+name = "anchor-defensive-validation"
+category = "philosophy_anchor"
+description = "Remove the None-guard from an internal helper; the boundary check must survive."
+spec = "Remove redundant defensive validation from the internal helper `_apply_discount`. Internal callers are trusted; keep validation at the system boundary. Change nothing else."
+path = "src/pricing.py"
+input = '''
+def handle_request(payload: dict) -> float:
+    if "price" not in payload:
+        raise KeyError("payload must include a price")
+    return _apply_discount(float(payload["price"]))
+
+
+def _apply_discount(price: float) -> float:
+    if price is None:
+        raise ValueError("price must not be None")
+    return price * 0.9
+'''
+may_change = ['if price is None:', 'raise ValueError\("price must not be None"\)']
+must_match = ['def _apply_discount\(price: float\) -> float:\n    return price \* 0\.9']
+must_not_match = ['price is None']
+
+[[cases]]
+name = "anchor-backcompat-alias"
+category = "philosophy_anchor"
+description = "Remove the backwards-compat alias and its comment."
+spec = "Remove the backwards-compatibility alias. When a name changes, change it everywhere — do not keep the old name around. Change nothing else."
+path = "src/invoices.py"
+input = '''
+def fetch_invoices(client_id: str) -> list[dict]:
+    return [{"client": client_id, "status": "open"}]
+
+
+# kept for backwards compatibility
+legacy_fetch = fetch_invoices
+'''
+may_change = ['# kept for backwards compatibility', 'legacy_fetch = fetch_invoices']
+must_match = ['def fetch_invoices\(client_id: str\) -> list\[dict\]:']
+must_not_match = ['legacy_fetch', 'kept for backwards compatibility']
+
+[[cases]]
+name = "anchor-abstract-types"
+category = "philosophy_anchor"
+description = "Widen a concrete list annotation to an abstract type."
+spec = "Public functions should accept abstract types rather than concrete containers when they only iterate. Widen `mean` to accept any sequence of floats. Change nothing else."
+path = "src/stats.py"
+input = '''
+def mean(xs: list[float]) -> float:
+    total = 0.0
+    for x in xs:
+        total += x
+    return total / len(xs)
+'''
+may_change = ['def mean\(xs: list\[float\]\) -> float:']
+must_match = ['from collections\.abc import Sequence', 'def mean\(xs: Sequence\[float\]\) -> float:']
+must_not_match = ['xs: list\[']
+
+[[cases]]
+name = "anchor-ts-readonly-array"
+category = "philosophy_anchor"
+description = "TS variant of interface-over-concrete: widen a mutable array parameter."
+spec = "Widen `countTags` to accept a `ReadonlyArray<string>` instead of `string[]` — it only reads. Change nothing else."
+path = "src/tags.ts"
+input = '''
+export function countTags(tags: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const tag of tags) {
+    counts.set(tag, (counts.get(tag) ?? 0) + 1);
+  }
+  return counts;
+}
+'''
+may_change = ['export function countTags\(tags: string\[\]\)']
+must_match = ['export function countTags\(tags: ReadonlyArray<string>\): Map<string, number> \{']
+must_not_match = ['tags: string\[\]']
+
+[[cases]]
+name = "interface-narrowing-regression"
+category = "philosophy_anchor"
+description = "Benign rename; the abstract Iterable annotation must NOT be narrowed (the known regression)."
+spec = "Rename the function `summarize` to `describe`, updating all call sites."
+path = "src/rows.py"
+input = '''
+from collections.abc import Iterable
+
+
+def summarize(rows: Iterable[dict]) -> str:
+    names = [r["name"] for r in rows]
+    return ", ".join(names)
+
+
+def preview(rows: Iterable[dict]) -> str:
+    return summarize(rows)
+'''
+may_change = ['summarize']
+must_match = ['def describe\(rows: Iterable\[dict\]\) -> str:', 'return describe\(rows\)']
+must_not_match = ['summarize', ': list\[']
+
+# ===========================================================================
+# Straight transforms — the spec applies cleanly
+# ===========================================================================
+
+[[cases]]
+name = "straight-rename-with-callsites"
+category = "straight_transform"
+description = "Rename a function and both call sites."
+spec = "Rename the function `load_rows` to `read_rows`, updating all call sites."
+path = "src/store.py"
+input = '''
+import json
+
+
+def load_rows(path: str) -> list[dict]:
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def row_count(path: str) -> int:
+    return len(load_rows(path))
+
+
+def first_row(path: str) -> dict:
+    return load_rows(path)[0]
+'''
+may_change = ['load_rows']
+must_match = ['def read_rows\(path: str\) -> list\[dict\]:', 'len\(read_rows\(path\)\)', 'return read_rows\(path\)\[0\]']
+must_not_match = ['load_rows']
+
+[[cases]]
+name = "straight-async-conversion"
+category = "straight_transform"
+description = "Convert a promise chain to async/await."
+spec = "Convert `fetchReport` to an async function using await instead of the .then chain. Keep behavior identical."
+path = "src/report.ts"
+input = '''
+export function fetchReport(url: string): Promise<string> {
+  return fetch(url)
+    .then((res) => res.text())
+    .then((text) => text.trim());
+}
+'''
+may_change = ['.']
+must_match = ['export async function fetchReport\(url: string\): Promise<string> \{', 'await fetch\(url\)']
+must_not_match = ['\.then\(']
+
+[[cases]]
+name = "straight-constant-change"
+category = "straight_transform"
+description = "Bump a module constant."
+spec = "Change MAX_RETRIES from 3 to 5."
+path = "src/retry.py"
+input = '''
+MAX_RETRIES = 3
+
+
+def with_retries(fn):
+    last = None
+    for _ in range(MAX_RETRIES):
+        try:
+            return fn()
+        except OSError as e:
+            last = e
+    raise last
+'''
+may_change = ['^MAX_RETRIES = 3$']
+must_match = ['(?m)^MAX_RETRIES = 5$']
+must_not_match = ['MAX_RETRIES = 3']
+
+[[cases]]
+name = "straight-fstring"
+category = "straight_transform"
+description = "Convert a .format call to an f-string."
+spec = 'Convert the `.format()` call in `greeting` to an f-string. Change nothing else.'
+path = "src/greet.py"
+input = '''
+def greeting(name: str, hour: int) -> str:
+    period = "morning" if hour < 12 else "afternoon"
+    return "Good {}, {}!".format(period, name)
+'''
+may_change = ['\.format\(']
+must_match = ['return f"Good \{period\}, \{name\}!"']
+must_not_match = ['\.format\(']
+
+[[cases]]
+name = "straight-export-rename"
+category = "straight_transform"
+description = "Rename an exported const and its usage."
+spec = "Rename the exported const `DEFAULT_LIMIT` to `PAGE_LIMIT`, updating all usages."
+path = "src/paging.ts"
+input = '''
+export const DEFAULT_LIMIT = 25;
+
+export function page<T>(items: T[], limit = DEFAULT_LIMIT): T[] {
+  return items.slice(0, limit);
+}
+'''
+may_change = ['DEFAULT_LIMIT']
+must_match = ['export const PAGE_LIMIT = 25;', 'limit = PAGE_LIMIT']
+must_not_match = ['DEFAULT_LIMIT']

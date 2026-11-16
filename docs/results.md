@@ -44,7 +44,62 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
-### 2026-10-12 — M8 eval on new workhorse GPU (7900 XTX via Vulkan, per ADR-027)
+### 2026-11-16 — M11 transform + tool-smoke baselines (ADR-030)
+
+The two pre-training transform baselines and the tool-calling base rate,
+measured before any fine-tuned candidate exists so the Phase 2 promotion
+gates are fixed in advance. Not a training run — these are the numbers
+M13's candidate is judged against.
+
+- **Commit:** `221c182` (harness + case sets in the same commit)
+- **Harness:** `codereview transform-eval` / `codereview tool-smoke`,
+  22 transform cases + 10 smoke prompts in `eval/`, temperature 0,
+  seed 42 — two consecutive 7b runs produced byte-identical reports.
+- **Backend:** Ollama on workhorse (7900 XTX / Vulkan).
+- **Models:** `qwen2.5-coder:latest` (7.6B, Q4_K_M — the stock-7b gate)
+  and `qwen2.5-coder:32b` (32.8B, Q4_K_M — the deployment signal;
+  what rae-local-agent runs today).
+
+**Transform pass rates (gate: the M13 candidate must beat stock-7b):**
+
+| category | stock 7b | stock 32b |
+| --- | --- | --- |
+| decline | 4/5 | 4/5 |
+| preservation_trap | 5/5 | 5/5 |
+| philosophy_anchor | 3/7 | 6/7 |
+| straight_transform | 5/5 | 5/5 |
+| **overall** | **17/22 (77.3%)** | **20/22 (90.9%)** |
+
+7b failures: `decline-no-dead-code`, `anchor-noise-comments`,
+`anchor-dead-code`, `anchor-backcompat-alias`, `anchor-abstract-types`.
+32b failures: `decline-no-dead-code`, `anchor-backcompat-alias`.
+
+**Tool-calling smoke (the ADR-029 tripwire base rate):** both models
+**10/10**, every call via the content-JSON channel — stock qwen2.5-coder
+names the right tool with valid arguments but omits the `<tool_call>`
+tags its own chat template demands, so Ollama's parser never populates
+the structured `tool_calls` field. The smoke check counts both channels
+(willingness + format, per ADR-030's deliberate coarseness).
+**Threshold set: `min_pass_rate = 0.9`** in `eval/tool_smoke.toml` — the
+run is deterministic, so two dropped prompts means materially degraded
+and fires the tripwire.
+
+**Notes:**
+
+- The harness scores what serving writes to disk: outputs are normalized
+  with an exact mirror of rae-local-agent's `_strip_fences` before
+  scoring. Measured raw (no strip), both models collapse to near-zero —
+  7b 0/22, 32b 3/22 — because they fence nearly every output. That mode
+  is absorbed by serving today, but it is also the clearest formatting
+  gap a fine-tune on unfenced outputs should close.
+- The philosophy-anchor column is the fine-tune's headroom in one
+  number: stock 7b is perfect on straight transforms and preservation
+  traps and fails exactly where the owner's philosophy diverges from
+  generic habits (keeps noise comments, keeps dead code, keeps
+  backcompat aliases, won't widen to abstract types).
+- Both models fail `decline-no-dead-code` the same way: told to delete
+  commented-out code from a file whose only comments are real
+  why-comments, both delete the real comments instead of declining.
 
 First eval after the workhorse GPU swap captured in ADR-027: the RTX
 5060 Ti is gone, replaced by an XFX Radeon RX 7900 XTX (Navi 31, RDNA3,

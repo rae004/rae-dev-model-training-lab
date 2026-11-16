@@ -1,0 +1,111 @@
+# Tool-calling smoke prompts (ADR-030; the ADR-029 tripwire).
+#
+# Ten prompts that each plainly require one of the offered tools. Scoring
+# is coarse on purpose: did the model emit a well-formed call to a known
+# tool, or did it answer in prose? The tools mirror the shape of what
+# rae-local-agent / rae-local-chat offer a local model — generic agent
+# plumbing, not this repo's API.
+#
+# threshold.min_pass_rate is the ADR-030 "materially below" line for the
+# fine-tuned candidate. It is set relative to the measured stock
+# qwen2.5-coder:7b base rate (recorded in docs/results.md) — ADR-030
+# defers the number until that first measurement.
+
+[threshold]
+# ADR-030 "materially below" line, set from the M11 baseline measurement
+# (docs/results.md 2026-11-16): stock 7b and 32b both score 10/10 with
+# temperature 0 + fixed seed, so the run is deterministic and any drop is
+# real. The candidate may lose at most one prompt; two misses fires the
+# tripwire (amendment ADR + tool-preservation slice + re-run).
+min_pass_rate = 0.9
+
+[[tools]]
+type = "function"
+[tools.function]
+name = "read_file"
+description = "Read a file and return its contents."
+[tools.function.parameters]
+type = "object"
+required = ["path"]
+[tools.function.parameters.properties.path]
+type = "string"
+description = "Path to the file to read."
+
+[[tools]]
+type = "function"
+[tools.function]
+name = "write_file"
+description = "Overwrite a file with new contents."
+[tools.function.parameters]
+type = "object"
+required = ["path", "contents"]
+[tools.function.parameters.properties.path]
+type = "string"
+description = "Path to the file to write."
+[tools.function.parameters.properties.contents]
+type = "string"
+description = "The full new contents of the file."
+
+[[tools]]
+type = "function"
+[tools.function]
+name = "run_command"
+description = "Run a shell command and return its output."
+[tools.function.parameters]
+type = "object"
+required = ["command"]
+[tools.function.parameters.properties.command]
+type = "string"
+description = "The shell command to run."
+
+[[tools]]
+type = "function"
+[tools.function]
+name = "search_code"
+description = "Search the repository for a pattern and return matching lines."
+[tools.function.parameters]
+type = "object"
+required = ["pattern"]
+[tools.function.parameters.properties.pattern]
+type = "string"
+description = "Regex or literal text to search for."
+
+[[prompts]]
+name = "read-config"
+user = "What's in the file configs/review.toml? Use the tools available to you."
+
+[[prompts]]
+name = "read-readme"
+user = "Open README.md and tell me what the project is about."
+
+[[prompts]]
+name = "write-gitignore"
+user = "Create a .gitignore file containing just two lines: node_modules and dist."
+
+[[prompts]]
+name = "write-note"
+user = "Save the text 'deploy frozen until Monday' into docs/NOTE.txt."
+
+[[prompts]]
+name = "run-tests"
+user = "Run the test suite and show me whether it passes."
+
+[[prompts]]
+name = "run-list"
+user = "List the files in the src directory."
+
+[[prompts]]
+name = "search-todo"
+user = "Find every TODO comment in the repository."
+
+[[prompts]]
+name = "search-function"
+user = "Where is the function parse_feed defined? Search the code."
+
+[[prompts]]
+name = "chained-intent"
+user = "Check whether pyproject.toml pins ruff, and if you need to look at the file, do so."
+
+[[prompts]]
+name = "fix-typo"
+user = "The word 'recieve' is misspelled somewhere in src/mailer.py. Read the file so we can fix it."
