@@ -25,8 +25,8 @@ def test_committed_smoke_set_loads() -> None:
         "run_command",
         "search_code",
     }
-    # Threshold stays unset until the base rate is measured (ADR-030).
-    assert threshold is None
+    # Pinned from the measured 10/10 base rate (docs/results.md 2026-11-16).
+    assert threshold == 0.9
 
 
 def test_wellformed_structured_call_passes() -> None:
