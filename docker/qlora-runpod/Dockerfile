@@ -56,6 +56,13 @@ RUN git clone --depth 1 --branch v1.1.0 \
     && /opt/convert-venv/bin/pip install --no-cache-dir \
         -r /opt/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
 
+# Triton JIT-compiles a CUDA utils shim at runtime (TRL 1.19's fused
+# kernels) and needs Python.h. Installed in its own late layer rather
+# than the apt block above so fixing it didn't rebuild the 29GB of
+# torch/HF layers.
+RUN apt-get update && apt-get install -y --no-install-recommends python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # The repo at a specific SHA (ADR-026): config + entrypoint travel with
 # the image, so a run is regenerable from the image tag alone.
 ARG REPO_SHA
