@@ -36,18 +36,25 @@ RUN pip install \
         peft==0.22.0 \
         trl==1.19.0 \
         bitsandbytes==0.50.2 \
+        kernels==0.19.0 \
         accelerate==1.16.0 \
         datasets==5.2.0 \
         huggingface_hub==2.5.0
 
 # llama.cpp for GGUF conversion: convert_hf_to_gguf.py + llama-quantize.
-# CPU-only build — conversion is not a GPU job.
+# CPU-only build — conversion is not a GPU job. The converter's
+# requirements pin an older transformers/hub and silently downgraded the
+# training stack when installed into the same venv (first local build),
+# so they live in their own venv; train_qlora.py invokes the convert
+# script with /opt/convert-venv/bin/python.
 RUN git clone --depth 1 --branch v1.1.0 \
         https://github.com/ggml-org/llama.cpp /opt/llama.cpp \
     && cmake -S /opt/llama.cpp -B /opt/llama.cpp/build \
         -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
     && cmake --build /opt/llama.cpp/build --target llama-quantize -j"$(nproc)" \
-    && pip install -r /opt/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+    && python3 -m venv /opt/convert-venv \
+    && /opt/convert-venv/bin/pip install --no-cache-dir \
+        -r /opt/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
 
 # The repo at a specific SHA (ADR-026): config + entrypoint travel with
 # the image, so a run is regenerable from the image tag alone.

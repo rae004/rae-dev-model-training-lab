@@ -29,6 +29,9 @@ import tomllib
 from pathlib import Path
 
 LLAMA_CPP = Path("/opt/llama.cpp")
+# The converter's deps conflict with the training stack (older
+# transformers/hub pins), so the image gives them their own venv.
+CONVERT_PYTHON = Path("/opt/convert-venv/bin/python")
 
 
 def load_config(path: Path) -> dict:
@@ -215,7 +218,7 @@ def _export_gguf(plan: dict, adapter_dir: Path, out_dir: Path, quant: str) -> Pa
     f16 = out_dir / f"qlora-{plan['run_tag']}-f16.gguf"
     subprocess.run(
         [
-            sys.executable,
+            str(CONVERT_PYTHON),
             str(LLAMA_CPP / "convert_hf_to_gguf.py"),
             str(merged_dir),
             "--outfile",
