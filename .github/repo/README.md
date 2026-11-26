@@ -10,6 +10,7 @@ these with the live repo and applies them.
 | `actions-permissions.json` | `PUT …/actions/permissions` | which Actions may run |
 | `actions-workflow.json` | `PUT …/actions/permissions/workflow` | `GITHUB_TOKEN` defaults; approvals stay off (no release automation here) |
 | `rulesets/*.json` | `POST`/`PUT …/rulesets` | matched to the live ruleset by `name` |
+| `labels.json` | `POST`/`PATCH …/labels` | optional and not used here; issue labels matched by name |
 
 ```
 uv run python scripts/repo_settings.py diff    # show drift (exit 1 if any)
