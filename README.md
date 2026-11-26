@@ -27,10 +27,12 @@ grows it into a multi-purpose local coding agent.
 > three surfaces — single-file transforms for rae-local-agent, structured
 > review (the M7/M8 harness), and concise repo-aware chat for
 > rae-local-chat — encoding the owner's coding philosophy in the weights.
-> M9 (weakness profile) is done; M10 (the ADR-029 dataset: commit-mined
-> transforms, reverse mutations, declines, reviews, chat — the teacher
-> never writes the code the student trains on) is in flight. Evaluation
-> per surface is ADR-030; the plan is `docs/MILESTONES.md` M10–M15.
+> M9 (weakness profile) and M10 (the ADR-029 dataset: 1,186 pairs of
+> commit-mined transforms, reverse mutations, declines, reviews, chat —
+> the teacher never writes the code the student trains on) are done.
+> Evaluation per surface is ADR-030; M11 fixed the pre-training
+> baselines (stock 7b 17/22, stock 32b 20/22 on the transform harness,
+> tool-calling 10/10 both). The plan is `docs/MILESTONES.md` M10–M15.
 
 ## What it is
 

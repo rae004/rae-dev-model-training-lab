@@ -39,12 +39,17 @@ class OllamaBackend:
     # improves single-stream throughput; scaling beyond is sub-linear due
     # to hyperthread / cache contention.
     num_thread: int | None = None
+    # Sampling seed. None → Ollama picks per request; the eval harnesses
+    # (M8, M11) set it so runs against workhorse are deterministic.
+    seed: int | None = None
 
     def generate(self, *, system: str, user: str) -> str:
         url = f"{self.base_url.rstrip('/')}/api/generate"
         options: dict[str, Any] = {"temperature": self.temperature}
         if self.num_thread is not None:
             options["num_thread"] = self.num_thread
+        if self.seed is not None:
+            options["seed"] = self.seed
         body: dict[str, Any] = {
             "model": self.model,
             "system": system,

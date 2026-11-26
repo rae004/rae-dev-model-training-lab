@@ -11,7 +11,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="codereview",
         description=(
             "Code review assistant. Subcommands: train (M3), sample (M4), "
-            "review (M7), eval (M8)."
+            "review (M7), eval (M8), transform-eval + tool-smoke (M11)."
         ),
     )
     parser.add_argument("--version", action="version", version=__version__)
@@ -153,6 +153,66 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override config's backend.model.",
     )
 
+    teval = subparsers.add_parser(
+        "transform-eval",
+        help="Score single-file transforms against the hand-authored set (M11).",
+        description=(
+            "Run every case in --transform-set through the backend with the "
+            "serving transform prompt and score the three ADR-030 booleans "
+            "plus the runaway guard."
+        ),
+    )
+    teval.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to a review config for the [backend] table. Defaults apply if omitted.",
+    )
+    teval.add_argument(
+        "--transform-set",
+        type=Path,
+        default=Path("eval/transform_set.toml"),
+        help="Path to the transform set TOML (default: eval/transform_set.toml).",
+    )
+    teval.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="If given, write the markdown report to this path (otherwise stdout).",
+    )
+    teval.add_argument("--backend-url", default=None, help="Override config's backend.base_url.")
+    teval.add_argument("--model", default=None, help="Override config's backend.model.")
+    teval.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Ollama sampling seed; with temperature 0 this makes runs deterministic.",
+    )
+
+    smoke = subparsers.add_parser(
+        "tool-smoke",
+        help="Measure the model's tool-calling rate (ADR-030 tripwire).",
+        description=(
+            "Send the canned prompts + tool schemas to Ollama /api/chat and "
+            "report how often the model answers with a well-formed tool call."
+        ),
+    )
+    smoke.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to a review config for the [backend] table. Defaults apply if omitted.",
+    )
+    smoke.add_argument(
+        "--smoke-set",
+        type=Path,
+        default=Path("eval/tool_smoke.toml"),
+        help="Path to the smoke set TOML (default: eval/tool_smoke.toml).",
+    )
+    smoke.add_argument("--backend-url", default=None, help="Override config's backend.base_url.")
+    smoke.add_argument("--model", default=None, help="Override config's backend.model.")
+    smoke.add_argument("--seed", type=int, default=42, help="Ollama sampling seed.")
+
     return parser
 
 
@@ -268,6 +328,81 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(text)
         return 0
+
+    if args.command == "transform-eval":
+        import sys
+
+        from .backend import OllamaBackend
+        from .config import load_config
+        from .review import ReviewConfig
+        from .transform_eval import load_transform_set, render_report, run_transform_eval
+
+        cfg_dict = load_config(args.config) if args.config is not None else {}
+        cfg = ReviewConfig.from_dict(cfg_dict)
+        if args.backend_url:
+            cfg.backend.base_url = args.backend_url
+        if args.model:
+            cfg.backend.model = args.model
+
+        try:
+            cases = load_transform_set(args.transform_set)
+        except (OSError, ValueError, KeyError) as e:
+            print(f"error: bad transform set {args.transform_set}: {e}", file=sys.stderr)
+            return 2
+        backend = OllamaBackend(
+            base_url=cfg.backend.base_url,
+            model=cfg.backend.model,
+            timeout=cfg.backend.timeout,
+            temperature=0.0,  # determinism; the harness never wants sampling variety
+            num_thread=cfg.backend.num_thread,
+            seed=args.seed,
+        )
+        log.info("running %d transform case(s) against %s", len(cases), cfg.backend.base_url)
+        try:
+            results = run_transform_eval(cases, backend)
+        except Exception as e:
+            print(f"error: transform eval failed: {e}", file=sys.stderr)
+            return 2
+        text = render_report(results, model=cfg.backend.model)
+        if args.report:
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(text, encoding="utf-8")
+            log.info("wrote report to %s", args.report)
+        else:
+            print(text)
+        return 0
+
+    if args.command == "tool-smoke":
+        import sys
+
+        from .config import load_config
+        from .review import ReviewConfig
+        from .tool_smoke import load_tool_smoke, render_report, run_tool_smoke
+
+        cfg_dict = load_config(args.config) if args.config is not None else {}
+        cfg = ReviewConfig.from_dict(cfg_dict)
+        if args.backend_url:
+            cfg.backend.base_url = args.backend_url
+        if args.model:
+            cfg.backend.model = args.model
+
+        tools, prompts, threshold = load_tool_smoke(args.smoke_set)
+        log.info("running %d smoke prompt(s) against %s", len(prompts), cfg.backend.base_url)
+        try:
+            results = run_tool_smoke(
+                tools,
+                prompts,
+                base_url=cfg.backend.base_url,
+                model=cfg.backend.model,
+                timeout=cfg.backend.timeout,
+                seed=args.seed,
+            )
+        except Exception as e:
+            print(f"error: tool smoke failed: {e}", file=sys.stderr)
+            return 2
+        print(render_report(results, model=cfg.backend.model, threshold=threshold))
+        rate = sum(r.tool_called for r in results) / len(results)
+        return 0 if threshold is None or rate >= threshold else 1
 
     log.info("codereview %s — no subcommand given; see --help.", __version__)
     return 0
