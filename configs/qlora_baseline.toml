@@ -1,0 +1,42 @@
+# QLoRA baseline run config (ADR-025, amended by ADR-029: sequence length
+# 8192). Every load-bearing hyperparameter is an ADR-025 decision — a
+# deviation here is an amendment ADR, not a tweak. CLAUDE.md rule 6:
+# this config + the seed + the image tag regenerate the run.
+
+[run]
+base_model = "Qwen/Qwen2.5-Coder-7B-Instruct"  # ADR-022
+dataset_repo = "rae004/qlora-dataset-m10-run3"  # M10 output, 1,186 pairs
+seed = 20261126
+
+[lora]
+rank = 16
+alpha = 32
+# ADR-025 is silent on dropout; 0.05 is the common QLoRA default —
+# config-visible, never silently changed (CLAUDE.md rule 5).
+dropout = 0.05
+target_modules = [
+    "q_proj", "k_proj", "v_proj", "o_proj",   # attention
+    "gate_proj", "up_proj", "down_proj",      # MLP
+]
+
+[quant]
+load_in_4bit = true
+quant_type = "nf4"
+double_quant = true
+compute_dtype = "bfloat16"
+
+[train]
+learning_rate = 2e-4
+lr_scheduler = "cosine"
+warmup_ratio = 0.03
+epochs = 3
+per_device_batch = 4
+grad_accum = 8          # effective batch 32 (ADR-025)
+sequence_length = 8192  # ADR-029 amendment (was 4096 in ADR-025)
+optimizer = "paged_adamw_32bit"
+holdout_fraction = 0.10 # eval slice, split before training; training-time
+                        # signal only — the authoritative eval is ADR-030
+
+[output]
+hf_repo_prefix = "rae004/qlora"  # artifacts land in rae004/qlora-<run-tag>
+gguf_quant = "Q4_K_M"            # matches the stock serving quant on workhorse
