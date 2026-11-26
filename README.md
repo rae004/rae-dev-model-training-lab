@@ -151,3 +151,11 @@ Training-data provenance and licenses are tracked deliberately. The full dataset
 is **not** committed — only a small sample plus preparation scripts — and large
 model artifacts live outside Git. The project itself is licensed under the
 [Apache License 2.0](LICENSE) (see ADR-020).
+
+## Repo settings
+
+GitHub settings for this repo (merge options, Actions permissions, the branch ruleset) come
+from the shared baseline in [`rae004/.github`](https://github.com/rae004/.github) and are
+applied from there. The only part kept here is
+[`.github/repo-settings.json`](.github/repo-settings.json), which lists the CI jobs that must
+pass before a PR can merge.
