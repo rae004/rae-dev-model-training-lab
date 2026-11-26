@@ -50,6 +50,13 @@ def test_to_messages_drops_everything_but_messages() -> None:
     assert tq.to_messages(records) == [{"messages": [{"role": "user", "content": "q"}]}]
 
 
+def test_warmup_steps_translates_adr_ratio() -> None:
+    # Full run: 1067 train pairs, batch 32, 3 epochs -> 34 steps/epoch,
+    # 102 total, 3% ~= 3 steps. Smoke slice floors at 1.
+    assert tq.warmup_steps(1067, CONFIG["train"], epochs=3) == 3
+    assert tq.warmup_steps(45, CONFIG["train"], epochs=1) == 1
+
+
 def test_run_plan_reads_env_overrides() -> None:
     plan = tq.resolve_run_plan(CONFIG, {"RUN_TAG": "smoke1", "MAX_PAIRS": "50", "MAX_EPOCHS": "1"})
     assert plan["artifact_repo"] == "rae004/qlora-smoke1"

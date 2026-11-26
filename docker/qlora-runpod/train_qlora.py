@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
 import subprocess
@@ -59,6 +60,13 @@ def split_holdout(records: list[dict], fraction: float, seed: int) -> tuple[list
 
 def to_messages(records: list[dict]) -> list[dict]:
     return [{"messages": r["messages"]} for r in records]
+
+
+def warmup_steps(n_train: int, train_cfg: dict, epochs: int) -> int:
+    """ADR-025 specifies warmup as a ratio (3%); TRL 1.19's SFTConfig only
+    accepts warmup_steps, so the ratio is translated here."""
+    steps_per_epoch = math.ceil(n_train / (train_cfg["per_device_batch"] * train_cfg["grad_accum"]))
+    return max(1, round(steps_per_epoch * epochs * train_cfg["warmup_ratio"]))
 
 
 def resolve_run_plan(config: dict, env: dict[str, str]) -> dict:
@@ -169,7 +177,7 @@ def _train(config: dict, plan: dict, train_records: list[dict], eval_records: li
             num_train_epochs=plan["epochs"],
             learning_rate=train["learning_rate"],
             lr_scheduler_type=train["lr_scheduler"],
-            warmup_ratio=train["warmup_ratio"],
+            warmup_steps=warmup_steps(len(train_records), train, plan["epochs"]),
             per_device_train_batch_size=train["per_device_batch"],
             gradient_accumulation_steps=train["grad_accum"],
             max_length=train["sequence_length"],
