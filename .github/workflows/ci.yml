@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Lint + test only — the GITHUB_TOKEN never needs to write anything.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
