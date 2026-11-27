@@ -1,5 +1,17 @@
 {
   "required_status_checks": [
     "lint-and-test"
+  ],
+  "labels": [
+    {
+      "name": "github-actions",
+      "color": "bfd4f2",
+      "description": "Workflows and GitHub Actions"
+    },
+    {
+      "name": "python",
+      "color": "2b67c6",
+      "description": "Python code or dependencies"
+    }
   ]
 }
