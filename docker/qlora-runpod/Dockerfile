@@ -42,7 +42,11 @@ RUN pip install \
         huggingface_hub==2.5.0
 
 # llama.cpp for GGUF conversion: convert_hf_to_gguf.py + llama-quantize.
-# CPU-only build — conversion is not a GPU job. The converter's
+# CPU-only build — conversion is not a GPU job. GGML_NATIVE=OFF because
+# the build runs on command but the binary runs on whatever CPU RunPod's
+# host has: the default -march=native SIGILL'd llama-quantize on the
+# first A100 pod (the A40 host's CPU happened to match command's).
+# The converter's
 # requirements pin an older transformers/hub and silently downgraded the
 # training stack when installed into the same venv (first local build),
 # so they live in their own venv; train_qlora.py invokes the convert
@@ -50,7 +54,8 @@ RUN pip install \
 RUN git clone --depth 1 --branch v1.1.0 \
         https://github.com/ggml-org/llama.cpp /opt/llama.cpp \
     && cmake -S /opt/llama.cpp -B /opt/llama.cpp/build \
-        -DGGML_CUDA=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
+        -DGGML_CUDA=OFF -DGGML_NATIVE=OFF \
+        -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
     && cmake --build /opt/llama.cpp/build --target llama-quantize -j"$(nproc)" \
     && python3 -m venv /opt/convert-venv \
     && /opt/convert-venv/bin/pip install --no-cache-dir \
