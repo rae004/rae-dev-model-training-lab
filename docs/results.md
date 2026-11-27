@@ -44,6 +44,77 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-11-26 — M12 QLoRA container smoke run (closes #63)
+
+First GPU execution of the ADR-025/026/029 QLoRA pipeline: the
+`docker/qlora-runpod` image ran end-to-end on a rented RunPod A40 —
+train → adapter push → merge → GGUF convert → quantize → GGUF push.
+A 50-pair smoke slice, not a quality run; the artifacts exist to prove
+the plumbing, and the model itself is meaningless.
+
+- **Commit:** `1105e9e` (image `run-20261126-1105e9e`; branch commit —
+  squash-merged to main as `8eddf56`)
+- **Config:** `configs/qlora_baseline.toml` + env `MAX_PAIRS=50`,
+  `MAX_EPOCHS=1`, seed 20261126
+- **GPU:** RunPod A40 48 GB, $0.59/hr (A4000 and RTX 4000 Ada were out
+  of capacity)
+- **Wall time:** ~10 min per successful cycle (~2 min image pull on a
+  warm host, ~35 s dataset+weights, 2 min train, ~6 min merge + GGUF +
+  upload)
+- **Cost:** **$0.96 for the entire M12 smoke campaign** — seven pod
+  deploys including every crash loop below ($0.93 GPU + $0.02 storage)
+
+| metric | value |
+| --- | ---:|
+| train_loss (2 steps) | 0.7233 |
+| eval_loss (5 held-out pairs) | 0.6017 |
+| eval_mean_token_accuracy | 0.8714 |
+
+**Artifacts:** `rae004/qlora-smoke1` on HF Hub — `adapter/` (LoRA +
+tokenizer) and `qlora-smoke1-q4_k_m.gguf` (4.46 GB, 4.91 BPW, from a
+14.5 GB f16 intermediate).
+
+#### What the smoke run caught (the point of M12)
+
+Five real failures, each invisible to the CPU-only tests, each fixed
+for ~10 cents of GPU time instead of surfacing on a $2/hr A100:
+
+1. **Dead HF token** — the saved token itself was revoked; rotated
+   (crash loop 1, 401 on the private dataset).
+2. **TRL 1.19 dropped `warmup_ratio`** from `SFTConfig` — ADR-025's
+   ratio is now translated to `warmup_steps` in the entrypoint (#76).
+3. **Triton's runtime JIT needs `python3-dev`** — first training step
+   compiles a CUDA shim; added in a late image layer (#77).
+4. **transformers 5.x re-saves tokenizer configs the converter venv's
+   older transformers can't parse** — the merged dir now gets the base
+   model's hub tokenizer files verbatim (#79).
+5. **RunPod restarts the container on *any* exit, including success.**
+   "exit 0 terminates the pod" (ADR-026 assumption) is false — a
+   finished run re-executes forever until manually terminated. The
+   reruns are idempotent (HF dedup skips unchanged uploads) but billed.
+   An earlier "OOM" diagnosis of this behavior was wrong — the restarts
+   after the memory-utilization warning were post-success loops, and
+   the 95 % memory reading was page cache.
+
+Also shipped for debuggability: `DEBUG_HOLD=1` pod env freezes the
+container on a crash instead of letting RunPod wipe the log (#78);
+the merge phase frees the training model before the converter runs
+(#80 — written for the misdiagnosed OOM, kept as a correct hygiene
+change).
+
+#### Carry-forward for M13 (full A100 run)
+
+- **The pod will not stop itself.** Either terminate manually when
+  `gguf ->` prints, set the template's max-runtime cap (ADR-026's 4 h
+  belt) as the backstop, or add a runpodctl self-stop (needs a RunPod
+  API key as a pod secret). Decision deferred to M13 setup.
+- Template needs: container disk 80 GB, no volume (never mount over
+  `/workspace`), secret `HF_TOKEN`, env `RUN_TAG` (+ `DEBUG_HOLD=1`
+  recommended); drop `MAX_PAIRS`/`MAX_EPOCHS` for the full run.
+- A100 estimate unchanged: 1–3 h ≈ $2–6.
+
+---
+
 ### 2026-11-16 — M11 transform + tool-smoke baselines (ADR-030)
 
 The two pre-training transform baselines and the tool-calling base rate,
