@@ -57,6 +57,16 @@ def test_warmup_steps_translates_adr_ratio() -> None:
     assert tq.warmup_steps(45, CONFIG["train"], epochs=1) == 1
 
 
+def test_stop_pod_is_noop_outside_runpod_and_curls_inside(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(tq.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+    assert tq.stop_pod({}) is False
+    assert calls == []
+    assert tq.stop_pod({"RUNPOD_POD_ID": "abc123", "RUNPOD_API_KEY": "k"}) is True
+    assert len(calls) == 1
+    assert "https://rest.runpod.io/v1/pods/abc123/stop" in calls[0]
+
+
 def test_run_plan_reads_env_overrides() -> None:
     plan = tq.resolve_run_plan(CONFIG, {"RUN_TAG": "smoke1", "MAX_PAIRS": "50", "MAX_EPOCHS": "1"})
     assert plan["artifact_repo"] == "rae004/qlora-smoke1"

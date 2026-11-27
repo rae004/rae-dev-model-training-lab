@@ -9,7 +9,9 @@ Runs inside the docker/qlora-runpod image on a RunPod pod. Flow:
    the pod before anything else can fail).
 5. Merge adapter into the base, convert to GGUF (llama.cpp convert +
    llama-quantize), push the GGUF.
-6. exit 0 -> the pod self-terminates.
+6. Stop this pod via the RunPod API (RunPod restarts the container on
+   ANY exit — success included — so a finished run must stop its own
+   pod; ADR-026's "exit 0 terminates the pod" assumed otherwise).
 
 Env: HF_TOKEN (pod secret, read+write), RUN_TAG (names the artifact repo
 rae004/qlora-<RUN_TAG>), MAX_PAIRS / MAX_EPOCHS (smoke-slice overrides,
@@ -270,21 +272,44 @@ def _export_gguf(plan: dict, adapter_dir: Path, out_dir: Path, quant: str) -> Pa
     return final
 
 
-def _entry() -> int:
-    """DEBUG_HOLD=1 freezes the pod on a crash instead of letting
-    RunPod restart-loop it, so the traceback stays on screen."""
-    try:
-        return main()
-    except BaseException:
-        if os.environ.get("DEBUG_HOLD"):
-            import time
-            import traceback
+def stop_pod(env: dict[str, str]) -> bool:
+    """Stop this pod through RunPod's REST API, using the pod-scoped
+    RUNPOD_API_KEY RunPod injects into every pod. Returns whether a stop
+    was attempted — outside RunPod (local runs) it's a no-op."""
+    pod_id = env.get("RUNPOD_POD_ID")
+    api_key = env.get("RUNPOD_API_KEY")
+    if not (pod_id and api_key):
+        return False
+    subprocess.run(
+        [
+            "curl", "-sS", "-X", "POST",
+            f"https://rest.runpod.io/v1/pods/{pod_id}/stop",
+            "-H", f"Authorization: Bearer {api_key}",
+        ],
+        check=False,
+    )
+    return True
 
-            traceback.print_exc()
-            print("DEBUG_HOLD set: sleeping 2h so the log stays up. Terminate the pod manually.")
+
+def _entry() -> int:
+    """Always end by stopping the pod — RunPod restart-loops the
+    container on any exit otherwise. DEBUG_HOLD=1 holds a crashed pod
+    for 2h first so the traceback stays on screen."""
+    import time
+    import traceback
+
+    try:
+        rc = main()
+    except BaseException:
+        traceback.print_exc()
+        if os.environ.get("DEBUG_HOLD"):
+            print("DEBUG_HOLD set: holding 2h for log inspection, then stopping the pod.")
             time.sleep(2 * 60 * 60)
-            return 1
-        raise
+        rc = 1
+    if stop_pod(dict(os.environ)):
+        print("stop requested for this pod; container may linger a few seconds")
+        time.sleep(60)  # give RunPod time to act before exit would trigger a restart
+    return rc
 
 
 if __name__ == "__main__":
