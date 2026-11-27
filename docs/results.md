@@ -44,6 +44,77 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-11-27 — M13 QLoRA full run on A100 (closes #65)
+
+The real fine-tune: full 1,186-pair ADR-029 dataset, 3 epochs, seed
+20261126, on a rented A100 80 GB PCIe. The shipped artifact is **run2**
+(`rae004/qlora-run2`): `adapter/` and `qlora-run2-q4_k_m.gguf`
+(4.68 GB, 4.91 BPW). Quality judgment belongs to M14's eval harness
+(ADR-024/030), not to these training-time numbers.
+
+- **Commit:** main `334e792` (image `run-20261127-334e792`) for run1/
+  run2's training; the final proven image is `run-20261127-b5db131`
+  (all fixes below) — identical training path, fixed endgame
+- **Config:** `configs/qlora_baseline.toml`, no env overrides
+  (1,186 pairs -> 1,068 train / 118 eval, 102 optimizer steps)
+- **GPU:** RunPod A100 80 GB PCIe (SXM was pricier; NVLink irrelevant
+  single-GPU)
+- **Wall time:** ~55 min per run — 49:48 train (29 s/step), ~8 min
+  merge + f16 GGUF + Q4_K_M + upload, plus ~5 min image pull
+- **Cost:** **$8.24 for the whole M13 day** ($8.19 GPU + $0.05
+  storage): one productive ~55-min A100 run is roughly $2 of that; the
+  rest bought run1's lost quantize, run2's two unwanted repeat
+  trainings (restart loop, below), and two $0.10-class A40 stop-check
+  pods. ADR-025's $3–10/run band holds.
+
+Metrics are **run1's** — identical config/seed/data/hardware; run2's
+own printed numbers died with its pod log (fixed forward: the
+entrypoint now uploads `trainer_state.json` with the adapter). The
+shipped GGUF is run2's; differences are GPU-nondeterminism noise.
+
+| metric | epoch 1 | epoch 2 | epoch 3 |
+| --- | ---:| ---:| ---:|
+| eval_loss | 0.3701 | 0.3487 | 0.3463 |
+| eval_mean_token_accuracy | 0.9030 | 0.9078 | 0.9085 |
+
+Train loss fell 0.78 → 0.32, smooth, no spikes; eval still improving
+but flattening at epoch 3 — ADR-025's 3 epochs looks right, no
+under-fit case for the 5-epoch extension. Compare the smoke run's
+0.6017 eval_loss: the full dataset matters.
+
+**The M13-caught failures** (same pattern as M12 — each found by a pod,
+each a cheap fix):
+
+1. **`llama-quantize` SIGILL on the A100 host** (run1, after a perfect
+   training). llama.cpp builds `-march=native` by default, so the
+   binary carried command's instruction set; the M12 A40 host matched
+   by luck, the A100 host didn't. Fixed with `GGML_NATIVE=OFF` (#85).
+2. **Self-stop called a host that doesn't exist.** #82's
+   `rest.runpod.io` returns NXDOMAIN from RunPod's own nameservers —
+   everywhere. Run2 finished, failed to stop, and RunPod's
+   restart-on-exit retrained it twice more before manual terminate
+   (~$3 of the day's bill). Two fixes: never exit on a pod — retry,
+   then idle under the 4 h max-runtime cap (#86, kept); and the real
+   endpoint, `POST api.runpod.io/v2/pods/{id}/action`
+   `{"action": "stop"}`, found via the v2 OpenAPI schema and verified
+   live from a pod terminal with only the injected pod-scoped
+   `RUNPOD_API_KEY` (#87). A misdiagnosis along the way (broken pod
+   DNS + a DoH fallback, #86) was removed once the pod's own terminal
+   disproved it.
+3. **Metrics lived only in pod logs** — see above; `trainer_state.json`
+   now ships with the adapter.
+
+**Hands-off proof:** the final `stopcheck2` pod (image
+`run-20261127-b5db131`, 50-pair slice) ran train → artifacts → upload
+→ **stopped itself**, zero intervention. The babysitting era is over;
+the 4 h max-runtime cap remains as the belt.
+
+**Carry-forward for M14:** pull `qlora-run2-q4_k_m.gguf` on the
+workhorse, `ollama create code-reviewer:run2`, eval per ADR-024/030
+against the stock-7b baseline. HF repos `qlora-run1`/`qlora-stopcheck`/
+`qlora-stopcheck2` are debugging byproducts, deletable; `qlora-run2`
+is the artifact of record.
+
 ### 2026-11-26 — M12 QLoRA container smoke run (closes #63)
 
 First GPU execution of the ADR-025/026/029 QLoRA pipeline: the

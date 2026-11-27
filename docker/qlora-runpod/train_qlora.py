@@ -203,6 +203,9 @@ def _train(config: dict, plan: dict, train_records: list[dict], eval_records: li
     adapter_dir = out_dir / "adapter"
     trainer.save_model(str(adapter_dir))
     tokenizer.save_pretrained(str(adapter_dir))
+    # Metrics leave the pod with the artifacts — run2's own numbers died
+    # with its log window because this file only lived in checkpoints/.
+    trainer.state.save_to_json(str(adapter_dir / "trainer_state.json"))
     api = HfApi(token=os.environ["HF_TOKEN"])
     api.create_repo(repo_id=plan["artifact_repo"], private=True, exist_ok=True)
     api.upload_folder(
