@@ -32,9 +32,10 @@ Pushing needs a GitHub token with `write:packages`
   HF Hub, then the script stops its own pod via RunPod's injected
   pod-scoped `RUNPOD_API_KEY` (success *and* crash — RunPod would
   otherwise restart the container on any exit, forever). The stop call
-  retries with a Cloudflare-DoH fallback (run2's pod couldn't resolve
-  `rest.runpod.io`), and on failure the script idles instead of exiting
-  so the worst case is the max-runtime cap, never a retrain loop.
+  (`POST api.runpod.io/v2/pods/{id}/action`, `{"action": "stop"}`) was
+  verified live from a pod terminal; it retries on failure, and if it
+  still can't land the script idles instead of exiting, so the worst
+  case is the max-runtime cap, never a retrain loop.
 
 ## Full run (M13, #64/#65)
 
@@ -47,13 +48,14 @@ Preflight, in order:
 
 1. Build + push a fresh image from main (`run-<date>-<sha>`); update the
    template's Container Image to it.
-2. **First deploy verifies self-stop live** — run2 proved the happy
-   path can fail (pod DNS couldn't resolve `rest.runpod.io`, so the pod
-   restart-looped through full retrains). The entrypoint now retries
-   with a DoH fallback and idles on failure. Watch the first run end:
-   pod should stop within ~2 min of the final `gguf ->` line; an idling
-   pod bills until the 4 h max-runtime cap, so stop it manually if you
-   see the idle message.
+2. **Self-stop is live-verified** — the pod-scoped key stopped its own
+   pod from the stopcheck pod's terminal (status EXITED). History: the
+   first endpoint (`rest.runpod.io`) doesn't exist in DNS, which
+   restart-looped run2 through full retrains until the idle-on-failure
+   guard landed. Still watch the first run end: pod should stop within
+   ~2 min of the final `gguf ->` line; an idling pod bills until the
+   4 h max-runtime cap, so stop it manually if you see the idle
+   message.
 3. **GPU:** A100 80 GB preferred (ADR-026; ~1–3 h, $3–10). If out of
    capacity, A40 48 GB at ~$0.59/hr is proven end-to-end with this exact
    config — slower, but well inside the 4 h belt and cheaper.
