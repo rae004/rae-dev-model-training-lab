@@ -24,7 +24,11 @@ Pushing needs a GitHub token with `write:packages`
 - **Env:** `RUN_TAG` (names the artifact repo `rae004/qlora-<RUN_TAG>`);
   smoke slice only: `MAX_PAIRS=50`, `MAX_EPOCHS=1`.
 - **Entrypoint:** the image CMD runs `train_qlora.py`; artifacts push to
-  HF Hub before exit, `exit 0` terminates the pod.
+  HF Hub, then the script stops its own pod via RunPod's injected
+  pod-scoped `RUNPOD_API_KEY` (success *and* crash — RunPod would
+  otherwise restart the container on any exit, forever). `DEBUG_HOLD=1`
+  holds a crashed pod 2h for log reading before stopping. Keep the
+  template's max-runtime cap as the belt.
 
 ## Smoke test first (M12, #63)
 

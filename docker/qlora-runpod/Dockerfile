@@ -73,5 +73,8 @@ RUN git clone https://github.com/rae004/rae-dev-model-training-lab /workspace/re
 WORKDIR /workspace/repo
 
 # RUN_TAG, HF_TOKEN (and optionally MAX_PAIRS, MAX_EPOCHS for the smoke
-# slice) come in as pod env/secrets. exit 0 terminates the pod (ADR-026).
+# slice) come in as pod env/secrets. The entrypoint stops its own pod
+# via RunPod's injected pod-scoped RUNPOD_API_KEY when done — RunPod
+# restarts the container on any exit, so plain exit 0 would loop
+# (ADR-026 assumed otherwise; same intent, working implementation).
 CMD ["python", "docker/qlora-runpod/train_qlora.py", "--config", "configs/qlora_baseline.toml"]
