@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).parent.parent
 _spec = importlib.util.spec_from_file_location(
@@ -59,12 +60,37 @@ def test_warmup_steps_translates_adr_ratio() -> None:
 
 def test_stop_pod_is_noop_outside_runpod_and_curls_inside(monkeypatch) -> None:
     calls = []
-    monkeypatch.setattr(tq.subprocess, "run", lambda cmd, **kw: calls.append(cmd))
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return SimpleNamespace(returncode=0, stdout="")
+
+    monkeypatch.setattr(tq.subprocess, "run", fake_run)
     assert tq.stop_pod({}) is False
     assert calls == []
     assert tq.stop_pod({"RUNPOD_POD_ID": "abc123", "RUNPOD_API_KEY": "k"}) is True
     assert len(calls) == 1
     assert "https://rest.runpod.io/v1/pods/abc123/stop" in calls[0]
+
+
+def test_stop_pod_falls_back_to_doh_when_pod_dns_is_broken(monkeypatch) -> None:
+    # run2's failure mode: plain curl can't resolve rest.runpod.io (rc 6),
+    # DoH over 1.1.1.1 resolves it, the --resolve retry lands.
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if any("dns-query" in part for part in cmd):
+            return SimpleNamespace(
+                returncode=0, stdout='{"Answer": [{"type": 1, "data": "1.2.3.4"}]}'
+            )
+        return SimpleNamespace(returncode=0 if "--resolve" in cmd else 6, stdout="")
+
+    monkeypatch.setattr(tq.subprocess, "run", fake_run)
+    monkeypatch.setattr(tq.time, "sleep", lambda s: None)
+    assert tq.stop_pod({"RUNPOD_POD_ID": "abc123", "RUNPOD_API_KEY": "k"}) is True
+    assert len(calls) == 3  # direct attempt, DoH lookup, resolved attempt
+    assert calls[-1][calls[-1].index("--resolve") + 1] == "rest.runpod.io:443:1.2.3.4"
 
 
 def test_run_plan_reads_env_overrides() -> None:
