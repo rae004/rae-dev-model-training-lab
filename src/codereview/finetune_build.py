@@ -39,10 +39,12 @@ from codereview.finetune_serialize import (
 from codereview.finetune_teacher import (
     CHAT_QUESTION_SYSTEM,
     SPEC_SYSTEM,
+    Grounding,
     build_chat_answer_prompt,
     build_chat_answer_system,
     build_chat_question_prompt,
     build_spec_prompt,
+    with_grounding,
 )
 from codereview.review import SYSTEM_PROMPT as REVIEW_SYSTEM_PROMPT
 
@@ -81,6 +83,7 @@ def build_dataset(
     sources: list[SourceFiles],
     teacher: TeacherLike,
     config: dict[str, Any],
+    grounding: Grounding | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Assemble the dataset; returns (records, composition report)."""
     rng = random.Random(config["dataset"]["seed"])
@@ -96,9 +99,13 @@ def build_dataset(
 
     records: list[dict[str, Any]] = []
     specs: list[SpecSource] = []
+    grounding = grounding or Grounding()
 
     # -- mutation transforms (no teacher involved) --
-    mutation_budget = min(len(RULES) * min_per_rule, counts["transform"] // 2)
+    # ADR-031 dropped run3's //2 cap (mined pairs reserved half the slice):
+    # philosophy rules now take what their minimums need and mined pairs
+    # fill the remainder.
+    mutation_budget = min(len(RULES) * min_per_rule, counts["transform"])
     records += _mutation_pairs(sources, rng, mutation_budget)
 
     # -- commit-mined transforms (teacher writes the spec only) --
@@ -151,7 +158,9 @@ def build_dataset(
     for commit in review_pool[: counts["review"]]:
         diff = unified_diff(commit.path, commit.before, commit.after)
         review_json = teacher.complete(
-            system=REVIEW_SYSTEM_PROMPT, user=f"```diff\n{diff}\n```", max_tokens=1024
+            system=with_grounding(REVIEW_SYSTEM_PROMPT, grounding.review),
+            user=f"```diff\n{diff}\n```",
+            max_tokens=1024,
         ).strip()
         records.append(review_record(diff, review_json, {"repo": commit.repo, "sha": commit.sha}))
 
@@ -160,7 +169,9 @@ def build_dataset(
     # the owner's code in the owner's voice, not about the public corpus.
     owner_material = [(s.repo, rel, text) for s in sources if s.owner for rel, text in s.files]
     rng.shuffle(owner_material)
-    answer_system = build_chat_answer_system(limits["max_chat_answer_words"])
+    answer_system = with_grounding(
+        build_chat_answer_system(limits["max_chat_answer_words"]), grounding.chat
+    )
     for repo, rel, text in owner_material[: counts["chat"]]:
         context = text[:6000]
         question = teacher.complete(

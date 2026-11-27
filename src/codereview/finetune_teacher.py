@@ -120,3 +120,19 @@ def build_chat_answer_system(max_words: int) -> str:
 
 def build_chat_answer_prompt(context: str, question: str) -> str:
     return f"SOURCE MATERIAL:\n{context}\n\nQUESTION: {question}"
+
+
+@dataclass(frozen=True)
+class Grounding:
+    """ADR-031: owner-written material appended to the teacher's system
+    prompt for chat answers and review references. The student never sees
+    it — grounding shapes teacher outputs, not training records."""
+
+    chat: str = ""
+    review: str = ""
+
+
+def with_grounding(system: str, grounding: str) -> str:
+    if not grounding:
+        return system
+    return f"{system}\n{grounding}"

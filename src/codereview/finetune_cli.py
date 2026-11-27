@@ -31,7 +31,7 @@ from codereview.finetune_mine import (
     mine_repo,
 )
 from codereview.finetune_serialize import write_jsonl
-from codereview.finetune_teacher import Teacher, TeacherConfig
+from codereview.finetune_teacher import Grounding, Teacher, TeacherConfig
 
 CHAT_EXTENSIONS = ALLOWED_EXTENSIONS | {".md"}
 MAX_FILES_PER_REPO = 800
@@ -81,6 +81,39 @@ def _sample_files(repo: Path, max_file_tokens: int) -> list[tuple[str, str]]:
         if len(files) >= MAX_FILES_PER_REPO:
             break
     return files
+
+
+def _load_grounding(config: dict) -> Grounding:
+    """ADR-031: assemble the owner-philosophy grounding for the teacher.
+    Absent [grounding] table -> empty grounding (run3-compatible)."""
+    g = config.get("grounding")
+    if not g:
+        return Grounding()
+    philosophy = Path(g["philosophy"]).read_text(encoding="utf-8")
+    checklist = Path(g["checklist"]).read_text(encoding="utf-8")
+    exemplars = []
+    with Path(g["chat_exemplars"]).open(encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                exemplars.append(json.loads(line))
+            if len(exemplars) == 3:
+                break
+    shots = "\n\n".join(
+        "EXAMPLE QUESTION:\n"
+        + r["messages"][0]["content"]
+        + "\n\nEXAMPLE ANSWER (match this register):\n"
+        + r["messages"][1]["content"]
+        for r in exemplars
+    )
+    chat = (
+        "\nThe owner's written philosophy — ground answers in it when relevant:\n\n"
+        f"{philosophy}\n\n{shots}"
+    )
+    review = (
+        "\nThe owner's construction philosophy and review checklist — draw "
+        f"findings from them when relevant:\n\n{philosophy}\n\n{checklist}"
+    )
+    return Grounding(chat=chat, review=review)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -134,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"{name}: {len(mined)} mined commits so far, HEAD {provenance[name][:12]}")
 
-    records, report = build_dataset(mined, sources, teacher, config)
+    records, report = build_dataset(mined, sources, teacher, config, _load_grounding(config))
     floor = config["dataset"]["floor_total"]
     if len(records) < floor:
         print(f"only {len(records)} pairs survived the gates; floor is {floor}", file=sys.stderr)
