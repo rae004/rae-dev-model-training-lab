@@ -149,6 +149,33 @@ systemctl show ollama --property=Environment
 curl -s http://workhorse:11434     # → "Ollama is running"
 ```
 
+**Hugging Face CLI** (pulls fine-tune GGUFs from the private HF repos the
+training pods push to; the binary is `hf` — `huggingface-cli` is the old
+name):
+
+```bash
+uv tool install "huggingface_hub[cli]"
+hf auth login        # READ-scope token
+```
+
+**Deploying a fine-tune candidate** (M14 pattern, first used for
+`rae004/qlora-run2`) — clone the stock baseline's Modelfile so candidate
+and baseline differ *only* in weights (Ollama dedups the shared
+template/parameter layers):
+
+```bash
+mkdir -p $HOME/models/<run-tag>
+hf download rae004/qlora-<run-tag> qlora-<run-tag>-q4_k_m.gguf \
+    --local-dir $HOME/models/<run-tag>
+ollama show --modelfile qwen2.5-coder:latest > $HOME/models/<run-tag>/Modelfile
+sed -i "s|^FROM .*|FROM $HOME/models/<run-tag>/qlora-<run-tag>-q4_k_m.gguf|" \
+    $HOME/models/<run-tag>/Modelfile
+ollama create rae-agent-candidate:<run-tag> -f $HOME/models/<run-tag>/Modelfile
+```
+
+Note the stock 7B lives locally under the tag `qwen2.5-coder:latest`
+(same manifest as `:7b`).
+
 If your default editor is something other than `nano`, prepend
 `SYSTEMD_EDITOR=vi` (or your preferred editor) to the `sudo systemctl edit`
 command — note the env var goes *after* `sudo`, not before.
