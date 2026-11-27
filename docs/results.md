@@ -44,6 +44,55 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-11-27 — M14 four-surface verdict: rae-agent-candidate:run2 (closes #69)
+
+ADR-030's full battery against the M13 fine-tune, served on workhorse
+(Vulkan) with the stock model's exact template/parameters (weights are
+the only difference). Reports: `docs/candidate-run2-transform-eval.md`,
+`docs/candidate-run2-review-eval.md`, `docs/candidate-run2-tool-smoke.md`,
+owner chat verdict on #68. Seed 20261126, temperature 0 where supported.
+
+**Promotion gates (ADR-030):**
+
+| surface | candidate | stock-7b | stock-32b | gate | verdict |
+| --- | --- | --- | --- | --- | :---: |
+| transform pass rate | **17/22 (77.3%)** | 17/22 | 20/22 | beat stock-7b | **FAIL** (tie) |
+| review (strict F1 / verdict acc) | **0.455 / 0.818** | 0.273 / 0.727 | — | no regression | **PASS** (improved) |
+| tool-calling smoke | **10/10** | 10/10 | 10/10 | ≥ 0.9, not degraded | **PASS** |
+| chat | owner verdict: fail with notes (#68) | — | — | reviewed qualitatively | **done** (non-gating) |
+
+**One gate fails → M15 takes the iteration arm** (one targeted change,
+re-run M13→M14 once, record both runs).
+
+**What the surfaces say together:**
+
+- **Review learned the most** — strict F1 up 67% relative, verdict
+  accuracy 0.727 → 0.818, and the three LGTM cases stayed clean (the
+  precision trap the M8 baseline flagged). The most structured output
+  (Review JSON) moved furthest.
+- **Transforms didn't move at all**: the candidate fails the *identical
+  five cases* stock-7b fails (`decline-no-dead-code` + four
+  `philosophy_anchor` cases) and passes everything both pass.
+  45% of the dataset bought zero measured change on its own surface.
+- **Tool calling is untouched** — 10/10 via the same
+  content-JSON-without-tags channel as stock; ADR-029's tripwire does
+  not fire.
+- **Chat (#68, owner fail-with-notes)**: casual voice took (6/7 under
+  the 150-word cap); technical questions collapse into generic
+  listicles over the cap; zero closed-book repo knowledge (confident
+  confabulation instead). Verified against the model directly
+  (`/api/chat`, no system prompt, temp 0 — the training shape), so not
+  a serving-harness artifact.
+
+**Diagnosis seed for M15:** the pattern across surfaces is coherent —
+structure transferred, knowledge/philosophy didn't. The transform and
+chat slices taught formats the base model already had, while the
+philosophy-anchor behaviors (the actual target, per ADR-028's four
+live failure modes) appear in too few, too-indirect pairs to move a 7B
+in 3 epochs. Candidate M15 levers, one to be chosen: philosophy-anchor
+pair shape targeted at the five failing cases' categories, or chat
+pairs that include context at train time to match serve time.
+
 ### 2026-11-27 — M13 QLoRA full run on A100 (closes #65)
 
 The real fine-tune: full 1,186-pair ADR-029 dataset, 3 epochs, seed
