@@ -24,6 +24,7 @@ import json
 import math
 import os
 import random
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -214,14 +215,27 @@ def _train(config: dict, plan: dict, train_records: list[dict], eval_records: li
 def _export_gguf(plan: dict, adapter_dir: Path, out_dir: Path, quant: str) -> Path:
     """Merge LoRA into the base, convert to GGUF, quantize."""
     import torch
+    from huggingface_hub import snapshot_download
     from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoModelForCausalLM
 
     merged_dir = out_dir / "merged"
     base = AutoModelForCausalLM.from_pretrained(plan["base_model"], dtype=torch.bfloat16)
     merged = PeftModel.from_pretrained(base, str(adapter_dir)).merge_and_unload()
     merged.save_pretrained(str(merged_dir))
-    AutoTokenizer.from_pretrained(plan["base_model"]).save_pretrained(str(merged_dir))
+    # The converter venv's older transformers can't parse tokenizer configs
+    # re-saved by the training stack's transformers 5.x (extra_special_tokens
+    # became a list), so the merged dir gets the base model's original
+    # tokenizer files verbatim — LoRA never changes the tokenizer.
+    tok_snapshot = Path(
+        snapshot_download(
+            repo_id=plan["base_model"],
+            allow_patterns=["tokenizer*", "vocab.json", "merges.txt", "special_tokens_map.json"],
+        )
+    )
+    for f in tok_snapshot.iterdir():
+        if f.is_file():
+            shutil.copy(f, merged_dir / f.name)
 
     f16 = out_dir / f"qlora-{plan['run_tag']}-f16.gguf"
     subprocess.run(
