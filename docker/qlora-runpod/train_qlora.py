@@ -12,9 +12,8 @@ Runs inside the docker/qlora-runpod image on a RunPod pod. Flow:
 6. Stop this pod via the RunPod API (RunPod restarts the container on
    ANY exit — success included — so a finished run must stop its own
    pod; ADR-026's "exit 0 terminates the pod" assumed otherwise). A
-   stop that can't land (run2's pod DNS couldn't resolve
-   rest.runpod.io) ends in an idle loop under the max-runtime cap,
-   never an exit.
+   stop that can't land ends in an idle loop under the max-runtime
+   cap, never an exit — exiting is what restart-loops.
 
 Env: HF_TOKEN (pod secret, read+write), RUN_TAG (names the artifact repo
 rae004/qlora-<RUN_TAG>), MAX_PAIRS / MAX_EPOCHS (smoke-slice overrides,
@@ -276,56 +275,28 @@ def _export_gguf(plan: dict, adapter_dir: Path, out_dir: Path, quant: str) -> Pa
     return final
 
 
-def _curl_stop(pod_id: str, api_key: str, resolve_ip: str | None = None) -> bool:
-    """One stop request; --fail makes HTTP errors look like curl failures."""
-    cmd = [
-        "curl", "-sS", "--fail", "-X", "POST",
-        f"https://rest.runpod.io/v1/pods/{pod_id}/stop",
-        "-H", f"Authorization: Bearer {api_key}",
-    ]
-    if resolve_ip:
-        cmd += ["--resolve", f"rest.runpod.io:443:{resolve_ip}"]
-    return subprocess.run(cmd, check=False).returncode == 0
-
-
-def _doh_lookup(host: str) -> str | None:
-    """Resolve host via Cloudflare DoH, addressed by IP so it works when
-    the pod's own DNS is broken — run2's pod resolved huggingface.co but
-    not rest.runpod.io, which turned every finished run into a restart."""
-    out = subprocess.run(
-        [
-            "curl", "-sS", "--fail",
-            f"https://1.1.1.1/dns-query?name={host}&type=A",
-            "-H", "accept: application/dns-json",
-        ],
-        check=False, capture_output=True, text=True,
-    )
-    if out.returncode != 0:
-        return None
-    try:
-        answers = json.loads(out.stdout).get("Answer", [])
-    except ValueError:
-        return None
-    for a in answers:
-        if a.get("type") == 1:  # A record
-            return a["data"]
-    return None
-
-
 def stop_pod(env: dict[str, str]) -> bool:
-    """Stop this pod through RunPod's REST API, using the pod-scoped
-    RUNPOD_API_KEY RunPod injects into every pod. Retries with a DoH
-    fallback for broken pod DNS. Returns whether this is a RunPod pod —
-    outside RunPod (local runs) it's a no-op."""
+    """Stop this pod through RunPod's REST API v2, using the pod-scoped
+    RUNPOD_API_KEY RunPod injects into every pod. The endpoint and the
+    key's permission to self-stop were verified live from a pod terminal
+    (the earlier rest.runpod.io host simply doesn't exist in DNS).
+    Returns whether this is a RunPod pod — outside RunPod it's a no-op."""
     pod_id = env.get("RUNPOD_POD_ID")
     api_key = env.get("RUNPOD_API_KEY")
     if not (pod_id and api_key):
         return False
     for attempt in range(10):
-        if _curl_stop(pod_id, api_key):
-            return True
-        ip = _doh_lookup("rest.runpod.io")
-        if ip and _curl_stop(pod_id, api_key, resolve_ip=ip):
+        rc = subprocess.run(
+            [
+                "curl", "-sS", "--fail", "-X", "POST",
+                f"https://api.runpod.io/v2/pods/{pod_id}/action",
+                "-H", f"Authorization: Bearer {api_key}",
+                "-H", "content-type: application/json",
+                "-d", '{"action": "stop"}',
+            ],
+            check=False,
+        ).returncode
+        if rc == 0:
             return True
         print(f"stop request failed (attempt {attempt + 1}/10); retrying in 30s", flush=True)
         time.sleep(30)
