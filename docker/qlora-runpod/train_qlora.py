@@ -20,6 +20,7 @@ data plumbing stay testable on CPU boxes without torch.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 import os
@@ -204,6 +205,12 @@ def _train(config: dict, plan: dict, train_records: list[dict], eval_records: li
     )
     print(f"adapter -> {plan['artifact_repo']}/adapter")
 
+    # The 46GB-RAM smoke pod OOM-killed when the merge phase held memory
+    # alongside the converter subprocess; release the training objects first.
+    del trainer, model
+    gc.collect()
+    torch.cuda.empty_cache()
+
     gguf = _export_gguf(plan, adapter_dir, out_dir, config["output"]["gguf_quant"])
     api.upload_file(
         path_or_fileobj=str(gguf), path_in_repo=gguf.name, repo_id=plan["artifact_repo"]
@@ -236,6 +243,11 @@ def _export_gguf(plan: dict, adapter_dir: Path, out_dir: Path, quant: str) -> Pa
     for f in tok_snapshot.iterdir():
         if f.is_file():
             shutil.copy(f, merged_dir / f.name)
+
+    # Drop our 15GB in-memory copy before the converter subprocess loads
+    # its own — holding both OOM-killed the 46GB smoke pod.
+    del merged, base
+    gc.collect()
 
     f16 = out_dir / f"qlora-{plan['run_tag']}-f16.gguf"
     subprocess.run(
