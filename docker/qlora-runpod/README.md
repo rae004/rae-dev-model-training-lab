@@ -16,25 +16,49 @@ Pushing needs a GitHub token with `write:packages`
 (`gh auth refresh -s write:packages`, then
 `gh auth token | docker login ghcr.io -u rae004 --password-stdin`).
 
-## RunPod pod spec
+## RunPod pod spec (proven on the M12 smoke run, #63)
 
 - **Image:** the GHCR tag above (~29 GB — allow pull time).
-- **Max runtime:** 4 h (ADR-026 belt; ADR-025 estimates 1–3 h for the full run).
+- **Container disk:** 80 GB. **No persistent volume** — a volume mounts
+  over `/workspace` and buries the baked-in repo.
+- **Max runtime:** 4 h (ADR-026; now the backstop behind self-stop.
+  ADR-025 estimates 1–3 h for the full run).
 - **Secret:** `HF_TOKEN` — HF Hub token with write scope.
-- **Env:** `RUN_TAG` (names the artifact repo `rae004/qlora-<RUN_TAG>`);
-  smoke slice only: `MAX_PAIRS=50`, `MAX_EPOCHS=1`.
+- **Env:** `RUN_TAG` (names the artifact repo `rae004/qlora-<RUN_TAG>`)
+  and `DEBUG_HOLD=1` (crashed pod holds 2 h for log reading).
+  Smoke slice only: `MAX_PAIRS=50`, `MAX_EPOCHS=1` — **drop both for
+  the full run.**
 - **Entrypoint:** the image CMD runs `train_qlora.py`; artifacts push to
   HF Hub, then the script stops its own pod via RunPod's injected
   pod-scoped `RUNPOD_API_KEY` (success *and* crash — RunPod would
-  otherwise restart the container on any exit, forever). `DEBUG_HOLD=1`
-  holds a crashed pod 2h for log reading before stopping. Keep the
-  template's max-runtime cap as the belt.
+  otherwise restart the container on any exit, forever).
 
-## Smoke test first (M12, #63)
+## Full run (M13, #64/#65)
 
-A4000-tier pod, `MAX_PAIRS=50 MAX_EPOCHS=1`, expect ≤30 min / <$2.
-Validates train → adapter push → GGUF convert → push → auto-exit before
-any A100 time is bought. Record cost + wall time in `docs/results.md`.
+Config is `configs/qlora_baseline.toml` as committed — 3 epochs, full
+1,186-pair dataset (inside ADR-025's 400–1,200 no-revisit band), seed
+20261126. The smoke overrides live in pod env, not the config, so the
+full run is the same template minus `MAX_PAIRS`/`MAX_EPOCHS`.
+
+Preflight, in order:
+
+1. Build + push a fresh image from main (`run-<date>-<sha>`); update the
+   template's Container Image to it.
+2. **First deploy verifies self-stop live** — #82's stop call has only
+   been proven inert off-RunPod. Watch the first run end: pod should
+   stop (not restart, not terminate) within ~1 min of the final
+   `gguf ->` line. If it restart-loops, terminate manually; the belt is
+   the 4 h max-runtime.
+3. **GPU:** A100 80 GB preferred (ADR-026; ~1–3 h, $3–10). If out of
+   capacity, A40 48 GB at ~$0.59/hr is proven end-to-end with this exact
+   config — slower, but well inside the 4 h belt and cheaper.
+4. Record wall time + cost + metrics in `docs/results.md` (#65).
+
+## Smoke test (M12, #63 — done)
+
+A40 pod, `MAX_PAIRS=50 MAX_EPOCHS=1`: ~10 min and ~$0.10 per cycle,
+$0.96 for the whole seven-deploy campaign. Full post-mortem in
+`docs/results.md`.
 
 ## Local checks (no GPU)
 
