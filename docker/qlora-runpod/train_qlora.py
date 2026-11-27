@@ -244,5 +244,22 @@ def _export_gguf(plan: dict, adapter_dir: Path, out_dir: Path, quant: str) -> Pa
     return final
 
 
+def _entry() -> int:
+    """DEBUG_HOLD=1 freezes the pod on a crash instead of letting
+    RunPod restart-loop it, so the traceback stays on screen."""
+    try:
+        return main()
+    except BaseException:
+        if os.environ.get("DEBUG_HOLD"):
+            import time
+            import traceback
+
+            traceback.print_exc()
+            print("DEBUG_HOLD set: sleeping 2h so the log stays up. Terminate the pod manually.")
+            time.sleep(2 * 60 * 60)
+            return 1
+        raise
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_entry())
