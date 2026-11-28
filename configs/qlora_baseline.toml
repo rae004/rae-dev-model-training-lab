@@ -5,7 +5,7 @@
 
 [run]
 base_model = "Qwen/Qwen2.5-Coder-7B-Instruct"  # ADR-022
-dataset_repo = "rae004/qlora-dataset-m10-run3"  # M10 output, 1,186 pairs
+dataset_repo = "rae004/qlora-dataset-m10-run4"  # ADR-031 composition v2, 1,180 pairs
 seed = 20261126
 
 [lora]

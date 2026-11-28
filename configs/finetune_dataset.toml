@@ -37,7 +37,9 @@ temperature = 0.2
 # into a real file; the pristine original is the ground-truth output. Every
 # ADR-028 philosophy anchor has a rule and a minimum pair count the
 # composition report must prove.
-min_pairs_per_rule = 30
+# 30 -> 100 per ADR-031: the run3 mix left philosophy rules at ~13% of the
+# dataset while the M14 transform gate failed on exactly those rules.
+min_pairs_per_rule = 100
 
 # Report-gate overrides only — sampling still budgets on the default, so an
 # override never changes which pairs a seed generates (ADR-029 allows
@@ -46,6 +48,14 @@ min_pairs_per_rule = 30
 # Plateaued at 22 across three runs even after widening the pattern to bare
 # annotations and six abstract types: the corpus ceiling, not a sampling bug.
 concrete_annotation = 20
+
+[grounding]
+# ADR-031: the teacher reads the owner's written philosophy when generating
+# chat answers and review references. Grounding shapes teacher OUTPUTS only —
+# none of these files enter the training records the student sees.
+philosophy = "docs/rae-context/philosophy.md"
+checklist = "docs/rae-context/review-checklist.md"
+chat_exemplars = "docs/rae-context/pilot.jsonl"  # style exemplars, first 3
 
 [upload]
 hf_repo_prefix = "rae004/qlora-dataset"

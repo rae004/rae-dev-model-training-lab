@@ -56,3 +56,10 @@ type = "git"
 url = "https://github.com/microsoft/TypeScript.git"
 ref = "main"
 license = "Apache-2.0"
+
+[[sources]]
+# ADR-031: the owner's written philosophy — chat-question source material.
+name = "rae-context"
+type = "path"
+path = "~/projects/rae-context"
+license = "owner"

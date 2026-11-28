@@ -12,6 +12,7 @@ and the prep scripts in `data/scripts/` are how it is regenerated.
 | `github.com/fastapi/fastapi` @ `master` | public — git | MIT | 2026-06-20 | Canonical modern Python web framework |
 | `github.com/TheAlgorithms/Python` @ `master` | public — git | MIT | 2026-06-20 | Diverse Python idioms; balances against TS dominance; tutorial-style |
 | `github.com/microsoft/TypeScript` @ `main` | public — git | Apache-2.0 | 2026-06-20 | Dominates the TS slice by volume; will dwarf owner code |
+| `~/projects/rae-context` | owner — local path | n/a (owner) | 2026-11-27 | ADR-031: owner's written philosophy + review checklist; chat-question source |
 
 > Determinism note: both public sources use `ref = "main"` for the initial
 > Phase 1 run, accepting non-reproducibility across pulls in exchange for

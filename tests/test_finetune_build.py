@@ -124,3 +124,32 @@ def test_mutation_pairs_never_repeat_a_rule_file_combo() -> None:
     ]
     assert combos, "expected mutation pairs"
     assert len(combos) == len(set(combos))
+
+
+class GroundedStubTeacher:
+    """Dispatches on prefix so appended grounding doesn't break routing."""
+
+    def __init__(self) -> None:
+        self.systems: list[str] = []
+
+    def complete(self, *, system: str, user: str, max_tokens: int = 1024) -> str:
+        self.systems.append(system)
+        if system.startswith(SPEC_SYSTEM):
+            return "Rename frobnicate_widget to spin_widget and keep behavior identical."
+        if system.startswith(REVIEW_SYSTEM_PROMPT):
+            return REVIEW_JSON
+        if system.startswith(CHAT_QUESTION_SYSTEM):
+            return "What does compute_total do?"
+        return "It sums the values in the sequence and returns the total."
+
+
+def test_grounding_reaches_teacher_but_never_the_records() -> None:
+    from codereview.finetune_teacher import Grounding
+
+    teacher = GroundedStubTeacher()
+    grounding = Grounding(chat="CHAT-GROUNDING-MARKER", review="REVIEW-GROUNDING-MARKER")
+    records, _ = build_dataset(_mined(), _sources(), teacher, CONFIG, grounding)
+    assert any("REVIEW-GROUNDING-MARKER" in s for s in teacher.systems)
+    assert any("CHAT-GROUNDING-MARKER" in s for s in teacher.systems)
+    # ADR-031: grounding shapes teacher outputs, never training records.
+    assert "GROUNDING-MARKER" not in json.dumps(records)
