@@ -1,45 +1,45 @@
 # Dataset composition report
 
-Total pairs: **1186**
+Total pairs: **1180**
 
 ## Shape proportions
 
 | shape | count | share |
 | --- | --- | --- |
-| chat | 229 | 19.3% |
-| decline | 180 | 15.2% |
-| review | 237 | 20.0% |
-| transform | 540 | 45.5% |
+| chat | 225 | 19.1% |
+| decline | 180 | 15.3% |
+| review | 235 | 19.9% |
+| transform | 540 | 45.8% |
 
 ## Mutation-rule coverage
 
-Default minimum per rule: 30
+Default minimum per rule: 100
 
 | rule | count | minimum | meets minimum |
 | --- | --- | --- | --- |
-| backcompat_alias | 32 | 30 | yes |
-| commented_out_code | 32 | 30 | yes |
+| backcompat_alias | 120 | 100 | yes |
+| commented_out_code | 120 | 100 | yes |
 | concrete_annotation | 22 | 20 | yes |
-| defensive_validation | 32 | 30 | yes |
-| noise_comments | 32 | 30 | yes |
+| defensive_validation | 119 | 100 | yes |
+| noise_comments | 119 | 100 | yes |
 
 ## Source repositories
 
 | repo | pairs |
 | --- | --- |
-| thealgorithms-python | 861 |
-| rae-budget | 106 |
-| rae-time-tracker-and-invoice | 97 |
-| ai-security-digest | 55 |
-| typescript | 45 |
-| fastapi | 22 |
+| thealgorithms-python | 809 |
+| rae-budget | 115 |
+| rae-time-tracker-and-invoice | 111 |
+| typescript | 63 |
+| ai-security-digest | 59 |
+| fastapi | 23 |
 
 ## Token-length histogram (full record)
 
 | bucket | records |
 | --- | --- |
-| <= 1024 | 85 |
-| <= 2048 | 281 |
-| <= 4096 | 381 |
-| <= 512 | 232 |
-| <= 8192 | 207 |
+| <= 1024 | 88 |
+| <= 2048 | 266 |
+| <= 4096 | 415 |
+| <= 512 | 222 |
+| <= 8192 | 189 |
