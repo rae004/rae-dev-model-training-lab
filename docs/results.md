@@ -44,6 +44,75 @@ representative sample — the M4 "done means" contract from
 
 ## Runs
 
+### 2026-11-27 — M15 iteration: run3 on dataset v2 — no gate moved (part of #71)
+
+The ADR-031 iteration arm, end to end: dataset composition v2
+(`rae004/qlora-dataset-m10-run4`, 1,180 pairs — philosophy mutation
+rules 13% → 42%, teacher grounded in `docs/rae-context/`), retrained
+with the run2 recipe otherwise unchanged, full ADR-030 battery re-run.
+Reports: `docs/candidate-run3-transform-eval.md`,
+`docs/candidate-run3-review-eval.md`, `docs/candidate-run3-tool-smoke.md`.
+
+- **Commit:** main `ce6a8da` (image `run-20261127-ce6a8da`)
+- **Config:** `configs/qlora_baseline.toml` (only `dataset_repo`
+  changed), seed 20261126; 1,180 pairs → 1,062 train / 118 eval,
+  102 steps
+- **GPU:** RunPod A100 80 GB PCIe, 28.7 s/step (run2 pace)
+- **Wall time:** 48:48 train; one clean hands-off run — pod stopped
+  itself (self-stop now 2-for-2 since #87)
+- **Cost:** pending billing CSV; single clean run, ~$2 at run2's rates
+- **Training curve** (from the now-uploaded `trainer_state.json`):
+  eval_loss 0.3660 → 0.3469 → 0.3447, token acc 0.9096, train loss
+  0.3963. Marginally below run2's 0.3463 — on a *different* eval
+  slice, so not comparable, and irrelevant anyway: the curve was flat
+  while every behavioral gate moved sideways or down. eval_loss
+  continues to measure nothing we promote on.
+
+**Both-runs gate table (ADR-030; run2 column = M14 entry below):**
+
+| surface | run2 | run3 | gate | run3 verdict |
+| --- | --- | --- | --- | :---: |
+| transform pass rate | 17/22 | **17/22** | beat stock-7b (18+) | **FAIL** — identical five cases |
+| review strict F1 / verdict acc | 0.455 / 0.818 | **0.364 / 0.727** | no regression | **FAIL** — regressed toward stock (0.273 / 0.727) |
+| tool-calling smoke | 10/10 | **10/10** | ≥ 0.9 | PASS (same content-JSON channel) |
+| chat | owner: fail with notes | **owner: fail** (#71) | qualitative | fail — register flatter, repo knowledge still zero |
+
+**What run3 falsified:** ADR-031's hypothesis was that the five failing
+philosophy cases were starved of examples (~13% of data vs 73%
+thealgorithms). Tripling their share to 42% changed *nothing* on the
+target surface — run3 fails the same five cases
+(`decline-no-dead-code`, `anchor-noise-comments`, `anchor-dead-code`,
+`anchor-backcompat-alias`, `anchor-abstract-types`), case for case,
+that run3's candidate, run2's candidate, and stock-7b all fail. The
+bottleneck is not example volume. Meanwhile the concentration diluted
+the review slice — the one surface run2 genuinely improved — and gave
+back roughly half the gain (small-N caveat: 11 cases, so ~one finding
++ one verdict flipped; but it's the number on the record, and the
+`lgtm-rename-only` precision trap cracked too, which run2 kept clean).
+Chat: the owner register visible in dataset spot-checks did not
+survive to closed-book serving; run3 answers in stock-assistant voice
+and flatly declares rae-local-agent "not a real tool or project"
+(run2 confabulated details instead — different failure, same root
+cause: chat pairs train bare question → answer with no repo context).
+
+**Verdict: run3 is equal-or-worse than run2 on every gate that moved.**
+run2 (`rae004/qlora-run2`) remains the best Phase 2 artifact. Promotion
+gates are not met by either run; `rae-agent:v1` is not shipped. M15's
+done-means (ii) is satisfied: one targeted change (delta ADR-031),
+M13→M14 re-run once, both runs recorded here.
+
+**What the two runs together say:** structure the base model already
+half-has (review JSON, tool calls, diff application) is trainable with
+this recipe; *behavioral philosophy* (delete dead code, refuse noise
+comments, resist back-compat aliases) and *closed-book repo knowledge*
+are not reachable by QLoRA rank 16 on a 7B with scripted-mutation
+pairs and context-free chat pairs — no matter the mix. Honest levers
+left, all out of M15's one-iteration scope: harder/adversarial
+philosophy pairs (vary surface forms, not counts), chat pairs with
+context at train time to match serve time, a bigger student, or
+accepting stock + system-prompt as the ceiling. Phase 2 close-out
+decision belongs to #70.
+
 ### 2026-11-27 — M14 four-surface verdict: rae-agent-candidate:run2 (closes #69)
 
 ADR-030's full battery against the M13 fine-tune, served on workhorse
